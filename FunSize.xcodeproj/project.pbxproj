@@ -7,8 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		00984B17763D700369EDEC9A /* ProjectDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02EE4777DA7119A0B6505763 /* ProjectDocument.swift */; };
 		05C443DCAED5110432A9496C /* CompositionBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF604566AA3BB8BCC60A5F56 /* CompositionBuilder.swift */; };
 		08F98D73A5518B4FE448E45C /* Deinterlacer.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD0432B6B749B8DDAF905877 /* Deinterlacer.swift */; };
+		09555A626738F4EA717C62E8 /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28D33C223BFB80BA6D8D32D2 /* WelcomeView.swift */; };
 		0E5034E8A26E5F3B44F6DB85 /* FunSizeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32D7412C35C3F9A223B2EC81 /* FunSizeApp.swift */; };
 		21C61C96AE18DC7455793F9E /* ProjectStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58695AD125524C438F965970 /* ProjectStore.swift */; };
 		2CABDE1F94EA7880F2FEF2A2 /* MediaLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AE75A8DBE4568FA8A01FED4 /* MediaLoader.swift */; };
@@ -23,6 +25,7 @@
 		6C09D17247C6278FD11AFF5B /* Bob.c in Sources */ = {isa = PBXBuildFile; fileRef = 1B0289711F60D3D04697EA5F /* Bob.c */; };
 		76D7B290F7A12B6D682497A6 /* EffectsPresets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B5B76CB5392225664517BE6 /* EffectsPresets.swift */; };
 		77FEAC945596F29AA6530CED /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 414974BBC0C760255B1E455C /* ContentView.swift */; };
+		871186DD73DE6E127E5260B4 /* ProjectWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A41A516C059DC2D2A3903CC3 /* ProjectWindow.swift */; };
 		8B6AA344B0CB5AEE84CAB8FA /* ClipDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB4DD8807247B8B5A52F3CDB /* ClipDetailView.swift */; };
 		9D3D28EE07F5737FB7604092 /* PlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9166EF3510B260CAA486983A /* PlayerView.swift */; };
 		A260224BF4FA233E101EB31D /* ExportToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D33E36EAC0683EB9A11F58C /* ExportToolbar.swift */; };
@@ -47,11 +50,13 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		02EE4777DA7119A0B6505763 /* ProjectDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectDocument.swift; sourceTree = "<group>"; };
 		058F160D94BA4B6C15A6DC46 /* ExportManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportManager.swift; sourceTree = "<group>"; };
 		0D011FC4DD2BC93E2816EEC7 /* Bob.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = Bob.h; sourceTree = "<group>"; };
 		1B0289711F60D3D04697EA5F /* Bob.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = Bob.c; sourceTree = "<group>"; };
 		1BB23B5AB67E265BCED52AF1 /* ExportFormat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportFormat.swift; sourceTree = "<group>"; };
 		1DF7D900CE44E611293E8C15 /* SuperResolutionModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuperResolutionModel.swift; sourceTree = "<group>"; };
+		28D33C223BFB80BA6D8D32D2 /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
 		2D33E36EAC0683EB9A11F58C /* ExportToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportToolbar.swift; sourceTree = "<group>"; };
 		32D7412C35C3F9A223B2EC81 /* FunSizeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FunSizeApp.swift; sourceTree = "<group>"; };
 		3AE75A8DBE4568FA8A01FED4 /* MediaLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaLoader.swift; sourceTree = "<group>"; };
@@ -62,6 +67,7 @@
 		4D0765D5527B6289E6319418 /* Clip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Clip.swift; sourceTree = "<group>"; };
 		55C1854074C9685942B9FCDA /* FunSizeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FunSizeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		58695AD125524C438F965970 /* ProjectStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectStore.swift; sourceTree = "<group>"; };
+		5CD5AACDC87C6D82D2EF7FF1 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		728F9B0D9225E79BC57A72F9 /* TimelineEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineEditorView.swift; sourceTree = "<group>"; };
 		7A05B9E294378093DEE90249 /* ClipInspectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipInspectorView.swift; sourceTree = "<group>"; };
 		7A0D16AEA9246861066AEBB9 /* Enhancer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Enhancer.swift; sourceTree = "<group>"; };
@@ -72,6 +78,7 @@
 		9506352228FE4A81529374F2 /* FunSizeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FunSizeTests.swift; sourceTree = "<group>"; };
 		9758D119D4FA125F78734A1F /* VideoGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoGeometry.swift; sourceTree = "<group>"; };
 		A06CD73C7FCAE863B633825C /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		A41A516C059DC2D2A3903CC3 /* ProjectWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectWindow.swift; sourceTree = "<group>"; };
 		AC287DF22BA75C83537AD161 /* TimelineInspectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineInspectorView.swift; sourceTree = "<group>"; };
 		AF604566AA3BB8BCC60A5F56 /* CompositionBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositionBuilder.swift; sourceTree = "<group>"; };
 		C68CC0E4CF9DA8193CE595A7 /* FrameClock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameClock.swift; sourceTree = "<group>"; };
@@ -89,6 +96,7 @@
 				4148BEF3A1767837955280B0 /* FunSize-Bridging-Header.h */,
 				8B885416B094F73E88EC9B56 /* FunSize.entitlements */,
 				32D7412C35C3F9A223B2EC81 /* FunSizeApp.swift */,
+				5CD5AACDC87C6D82D2EF7FF1 /* Info.plist */,
 				382C2BEBE1C1A486C7476A7A /* Models */,
 				D11790C577C2008A6A71AB0C /* Native */,
 				994012F3FCBE86B62FFEF3A5 /* Services */,
@@ -105,11 +113,13 @@
 				414974BBC0C760255B1E455C /* ContentView.swift */,
 				2D33E36EAC0683EB9A11F58C /* ExportToolbar.swift */,
 				9166EF3510B260CAA486983A /* PlayerView.swift */,
+				A41A516C059DC2D2A3903CC3 /* ProjectWindow.swift */,
 				A06CD73C7FCAE863B633825C /* SettingsView.swift */,
 				DE625BBFB11AECFAC072A9C5 /* SidebarView.swift */,
 				EC36977A67B9BC9DBE6F7250 /* TimelineDetailView.swift */,
 				728F9B0D9225E79BC57A72F9 /* TimelineEditorView.swift */,
 				AC287DF22BA75C83537AD161 /* TimelineInspectorView.swift */,
+				28D33C223BFB80BA6D8D32D2 /* WelcomeView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -121,6 +131,7 @@
 				4B5B76CB5392225664517BE6 /* EffectsPresets.swift */,
 				1BB23B5AB67E265BCED52AF1 /* ExportFormat.swift */,
 				C68CC0E4CF9DA8193CE595A7 /* FrameClock.swift */,
+				02EE4777DA7119A0B6505763 /* ProjectDocument.swift */,
 				58695AD125524C438F965970 /* ProjectStore.swift */,
 			);
 			path = Models;
@@ -282,7 +293,9 @@
 				0E5034E8A26E5F3B44F6DB85 /* FunSizeApp.swift in Sources */,
 				2CABDE1F94EA7880F2FEF2A2 /* MediaLoader.swift in Sources */,
 				9D3D28EE07F5737FB7604092 /* PlayerView.swift in Sources */,
+				00984B17763D700369EDEC9A /* ProjectDocument.swift in Sources */,
 				21C61C96AE18DC7455793F9E /* ProjectStore.swift in Sources */,
+				871186DD73DE6E127E5260B4 /* ProjectWindow.swift in Sources */,
 				645F950D64DDFF8A714A519D /* SettingsView.swift in Sources */,
 				E6E2CD0D93946BACFEF35F4F /* SidebarView.swift in Sources */,
 				EEEA5939D2D2E4872A57D29A /* SuperResolutionModel.swift in Sources */,
@@ -290,6 +303,7 @@
 				F2313D2516B6B5FF7B7772D5 /* TimelineEditorView.swift in Sources */,
 				59FD7B2EB09B9F18D053DFA8 /* TimelineInspectorView.swift in Sources */,
 				583BA7074E11852AA2C2D02E /* VideoGeometry.swift in Sources */,
+				09555A626738F4EA717C62E8 /* WelcomeView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -391,6 +405,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				GCC_OPTIMIZATION_LEVEL = 3;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = FunSize/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = FunSize;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.video";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -432,6 +447,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				GCC_OPTIMIZATION_LEVEL = 3;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = FunSize/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = FunSize;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.video";
 				LD_RUNPATH_SEARCH_PATHS = (

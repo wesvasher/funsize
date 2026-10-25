@@ -806,3 +806,113 @@ struct CaptionTests {
         await controller.updateCaptions()  // no captions: nothing to change, no crash
     }
 }
+
+struct ProjectFileTests {
+    @Test func savesAndReopensClipsSettingsAndTimeline() async throws {
+        let dir = try TestVideo.tempDirectory()
+        let url = try await TestVideo.make(in: dir, name: "saved", seconds: 2, size: CGSize(width: 320, height: 240))
+
+        let store = ProjectStore(exporter: ExportManager())
+        let clip = try #require(store.importFiles([url]).first)
+        clip.inPoint = 0.5
+        clip.outPoint = 1.5
+        clip.denoise = true
+        clip.denoiseStrength = 0.8
+        clip.upscale = .fast
+        clip.sharpen = 0.3
+        clip.deinterlace = true
+        clip.fieldOrderChoice = .topFirst
+        clip.showCaptions = true
+        store.addToTimeline([clip])
+
+        // Through the same encoding the document uses.
+        var document = ProjectDocument(file: store.projectFile)
+        let data = try JSONEncoder().encode(document.file)
+        document.file = try JSONDecoder().decode(ProjectFile.self, from: data)
+
+        let reopened = ProjectStore(exporter: ExportManager())
+        reopened.apply(document.file)
+        reopened.selectInitialItem()
+        #expect(reopened.projectFile == store.projectFile)
+        #expect(reopened.selection == [.timeline])
+
+        let copy = try #require(reopened.clips.first)
+        #expect(copy.id == clip.id)
+        #expect(copy.url.standardizedFileURL == url.standardizedFileURL)
+        #expect(copy.markedRange == 0.5...1.5)
+        #expect(copy.denoise && copy.denoiseStrength == 0.8 && copy.sharpen == 0.3)
+        #expect(copy.fieldOrderChoice == .topFirst && copy.showCaptions && copy.upscale == .fast)
+        #expect(reopened.timeline.first?.trimStart == 0.5)
+
+        // The video loads again from the saved project.
+        for _ in 0..<100 where !copy.isLoaded { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(copy.isLoaded)
+    }
+
+    @Test func undoStyleChangesUpdateExistingClips() async throws {
+        let dir = try TestVideo.tempDirectory()
+        let a = try await TestVideo.make(in: dir, name: "a", seconds: 1, size: CGSize(width: 320, height: 240))
+        let b = try await TestVideo.make(in: dir, name: "b", seconds: 1, size: CGSize(width: 320, height: 240))
+        let store = ProjectStore(exporter: ExportManager())
+        let before = store.projectFile
+        store.importFiles([a])
+        let oneClip = store.projectFile
+        let first = store.clips[0]
+        store.importFiles([b])
+        first.sharpen = 0.5
+
+        store.apply(oneClip)  // like Undo
+        #expect(store.clips.count == 1)
+        #expect(store.clips[0] === first)  // same clip object, nothing reloaded
+        #expect(first.sharpen == 0)
+
+        store.apply(before)
+        #expect(store.clips.isEmpty)
+    }
+
+    @Test func openVideoStartsProjectWithThatClipSelected() async throws {
+        let dir = try TestVideo.tempDirectory()
+        let url = try await TestVideo.make(in: dir, name: "tape", seconds: 1, size: CGSize(width: 320, height: 240))
+        let notVideo = dir.appending(path: "notes.txt")
+        try Data("hi".utf8).write(to: notVideo)
+
+        let file = ProjectFile.with(videos: [url, notVideo])
+        #expect(file.clips.count == 1)
+
+        let store = ProjectStore(exporter: ExportManager())
+        store.apply(file)
+        store.selectInitialItem()
+        #expect(store.selectedClips.first?.name == "tape")
+    }
+
+    @Test func olderFilesWithMissingFieldsStillOpen() throws {
+        let json = #"{"version":1,"clips":[{"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","path":"/nowhere/tape.mov"}],"timeline":[]}"#
+        let file = try JSONDecoder().decode(ProjectFile.self, from: Data(json.utf8))
+        #expect(file.clips.first?.denoiseStrength == 0.5)
+        #expect(file.clips.first?.upscale == .off)
+    }
+
+    @Test func missingVideoSaysSo() async throws {
+        var file = ProjectFile()
+        file.clips = [.init(url: URL(filePath: "/nowhere/tape.mov"), bookmark: nil)]
+        let store = ProjectStore(exporter: ExportManager())
+        store.apply(file)
+        let clip = try #require(store.clips.first)
+        for _ in 0..<50 where clip.loadError == nil { try await Task.sleep(for: .milliseconds(20)) }
+        #expect(clip.loadError?.contains("Can't find") == true)
+    }
+
+    @Test func welcomeWindowLaysOut() async throws {
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 720, height: 440),
+                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.contentView = NSHostingView(rootView: WelcomeView())
+        window.orderFront(nil)
+        defer { window.orderOut(nil) }
+        for _ in 0..<10 {
+            try await Task.sleep(for: .milliseconds(30))
+            window.contentView?.layoutSubtreeIfNeeded()
+            window.displayIfNeeded()
+        }
+        #expect(window.contentView?.fittingSize.width ?? 0 >= 700)
+    }
+}

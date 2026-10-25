@@ -69,6 +69,7 @@ final class ProjectStore {
                 continue
             }
             let clip = Clip(url: url)
+            clip.bookmark = Clip.makeBookmark(for: url)
             clips.append(clip)
             result.append(clip)
             Task { await MediaLoader.load(clip) }
@@ -90,6 +91,72 @@ final class ProjectStore {
             if case .clip(let id) = $0 { return !ids.contains(id) }
             return true
         }
+    }
+
+    // MARK: Saving and opening
+
+    /// Everything a project file stores, built from the current state.
+    var projectFile: ProjectFile {
+        ProjectFile(
+            clips: clips.map(\.record),
+            timeline: timeline.map { .init(id: $0.id, clipID: $0.clipID, trimStart: $0.trimStart, trimEnd: $0.trimEnd) }
+        )
+    }
+
+    /// Brings the store in line with a project file: when opening it, and after Undo/Redo.
+    /// Clips already open keep their loaded pictures and details.
+    func apply(_ file: ProjectFile) {
+        guard file != projectFile else { return }
+        let existing = Dictionary(clips.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let updated = file.clips.map { record in
+            let clip = existing[record.id] ?? Self.openClip(record)
+            clip.apply(record)
+            return clip
+        }
+        if updated.map(\.id) != clips.map(\.id) { clips = updated }
+
+        let items = file.timeline.map {
+            TimelineItem(id: $0.id, clipID: $0.clipID, trimStart: $0.trimStart, trimEnd: $0.trimEnd)
+        }
+        if items != timeline { timeline = items }
+
+        let ids = Set(clips.map(\.id))
+        let kept = selection.filter {
+            if case .clip(let id) = $0 { return ids.contains(id) }
+            return true
+        }
+        if kept != selection { selection = kept }
+        if let selected = selectedTimelineItemID, !timeline.contains(where: { $0.id == selected }) {
+            selectedTimelineItemID = nil
+        }
+    }
+
+    /// Selects something sensible after opening a project.
+    func selectInitialItem() {
+        guard selection.isEmpty else { return }
+        if !timeline.isEmpty {
+            selection = [.timeline]
+        } else if let first = clips.first {
+            selection = [.clip(first.id)]
+        }
+    }
+
+    /// Finds a saved clip's video (following it if it moved) and starts loading it.
+    private static func openClip(_ record: ProjectFile.ClipRecord) -> Clip {
+        var url = URL(filePath: record.path)
+        var bookmark = record.bookmark
+        if let data = record.bookmark {
+            var isStale = false
+            if let resolved = try? URL(resolvingBookmarkData: data, options: .withSecurityScope, bookmarkDataIsStale: &isStale) {
+                _ = resolved.startAccessingSecurityScopedResource()
+                url = resolved
+                if isStale { bookmark = Clip.makeBookmark(for: resolved) ?? data }
+            }
+        }
+        let clip = Clip(url: url, id: record.id)
+        clip.bookmark = bookmark
+        Task { await MediaLoader.load(clip) }
+        return clip
     }
 
     // MARK: Timeline editing

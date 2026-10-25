@@ -42,21 +42,18 @@ struct DetailView: View {
                 DropZoneView()
             }
         }
-        .navigationTitle(title)
+        // The window title is the project's name; the subtitle says what's showing.
         .navigationSubtitle(subtitle)
-    }
-
-    private var title: String {
-        if store.isTimelineSelected { return "Timeline" }
-        if store.selectedClips.count == 1 { return store.selectedClips[0].name }
-        return "FunSize"
     }
 
     private var subtitle: String {
         if store.isTimelineSelected {
-            return "\(store.timeline.count) clips · \(store.timelineDuration.timecode)"
+            return "Timeline · \(store.timeline.count) clips · \(store.timelineDuration.timecode)"
         }
-        if store.selectedClips.count == 1 { return store.selectedClips[0].summary }
+        if store.selectedClips.count == 1 {
+            let clip = store.selectedClips[0]
+            return "\(clip.name) · \(clip.summary)"
+        }
         if store.selectedClips.count > 1 { return "\(store.selectedClips.count) clips selected" }
         return ""
     }

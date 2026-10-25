@@ -13,6 +13,10 @@ enum MediaLoader {
     }
 
     static func load(_ clip: Clip) async {
+        guard FileManager.default.fileExists(atPath: clip.url.path(percentEncoded: false)) else {
+            clip.loadError = "Can't find this file. It may have been moved, renamed, or deleted."
+            return
+        }
         let asset = AVURLAsset(url: clip.url)
         do {
             clip.duration = try await asset.load(.duration).seconds

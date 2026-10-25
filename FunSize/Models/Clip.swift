@@ -10,9 +10,11 @@ final class Clip: Identifiable {
         let image: CGImage
     }
 
-    let id = UUID()
+    let id: UUID
     let url: URL
     let name: String
+    /// Saved in the project so the file can be reopened after relaunching.
+    var bookmark: Data?
 
     var duration: Double = 0
     var displaySize: CGSize = .zero
@@ -118,9 +120,45 @@ final class Clip: Identifiable {
     /// "60p" for 29.97 fps interlaced video, "50p" for PAL.
     var deinterlacedRateLabel: String { "\(Int((frameRate * 2).rounded()))p" }
 
-    init(url: URL) {
+    init(url: URL, id: UUID = UUID()) {
+        self.id = id
         self.url = url
         self.name = url.deletingPathExtension().lastPathComponent
+    }
+
+    // MARK: Saving
+
+    static func makeBookmark(for url: URL) -> Data? {
+        try? url.bookmarkData(options: .withSecurityScope, includingResourceValuesForKeys: nil, relativeTo: nil)
+    }
+
+    /// The parts of this clip a project file keeps.
+    var record: ProjectFile.ClipRecord {
+        var r = ProjectFile.ClipRecord(id: id, url: url, bookmark: bookmark)
+        r.inPoint = inPoint
+        r.outPoint = outPoint
+        r.deinterlace = deinterlace
+        r.fieldOrder = fieldOrderChoice
+        r.showCaptions = showCaptions
+        r.denoise = denoise
+        r.denoiseStrength = denoiseStrength
+        r.upscale = upscale
+        r.sharpen = sharpen
+        return r
+    }
+
+    /// Takes the saved settings (used when opening a project and for undo).
+    /// Only changed values are written so nothing redraws needlessly.
+    func apply(_ r: ProjectFile.ClipRecord) {
+        if inPoint != r.inPoint { inPoint = r.inPoint }
+        if outPoint != r.outPoint { outPoint = r.outPoint }
+        if deinterlace != r.deinterlace { deinterlace = r.deinterlace }
+        if fieldOrderChoice != r.fieldOrder { fieldOrderChoice = r.fieldOrder }
+        if showCaptions != r.showCaptions { showCaptions = r.showCaptions }
+        if denoise != r.denoise { denoise = r.denoise }
+        if denoiseStrength != r.denoiseStrength { denoiseStrength = r.denoiseStrength }
+        if upscale != r.upscale { upscale = r.upscale }
+        if sharpen != r.sharpen { sharpen = r.sharpen }
     }
 
     var poster: CGImage? { thumbnails.first?.image }
@@ -160,8 +198,8 @@ struct TimelineItem: Identifiable, Hashable {
     /// `nil` means "to the end of the clip".
     var trimEnd: Double?
 
-    init(clipID: UUID, trimStart: Double = 0, trimEnd: Double? = nil) {
-        self.id = UUID()
+    init(id: UUID = UUID(), clipID: UUID, trimStart: Double = 0, trimEnd: Double? = nil) {
+        self.id = id
         self.clipID = clipID
         self.trimStart = trimStart
         self.trimEnd = trimEnd

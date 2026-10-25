@@ -1,7 +1,7 @@
 import AVFoundation
 
 /// Which field of an interlaced frame was captured first.
-nonisolated enum FieldOrder: String, CaseIterable, Identifiable, Hashable, Sendable {
+nonisolated enum FieldOrder: String, CaseIterable, Identifiable, Hashable, Codable, Sendable {
     case topFirst
     case bottomFirst
 

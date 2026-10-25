@@ -16,6 +16,20 @@ targets:
     type: application
     platform: macOS
     sources: [FunSize]
+    info:
+      path: FunSize/Info.plist
+      properties:
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: FunSize Project
+            CFBundleTypeRole: Editor
+            LSHandlerRank: Owner
+            LSItemContentTypes: [com.wesvasher.funsize.project]
+        UTExportedTypeDeclarations:
+          - UTTypeIdentifier: com.wesvasher.funsize.project
+            UTTypeDescription: FunSize Project
+            UTTypeConformsTo: [public.data, public.content]
+            UTTypeTagSpecification:
+              public.filename-extension: [funsize]
     entitlements:
       path: FunSize/FunSize.entitlements
       properties:
