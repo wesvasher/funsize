@@ -9,6 +9,18 @@ struct ClipDetailView: View {
     @State private var sourceID = UUID()
     @AppStorage("showClipInspector") private var isShowingInspector = true
 
+    /// The inspector, hidden while both sidebars are hidden (⌘.). Showing it by hand
+    /// brings the left sidebar back too.
+    private var inspectorShown: Binding<Bool> {
+        Binding(
+            get: { isShowingInspector && !store.sidebarsHidden },
+            set: { show in
+                if show, store.sidebarsHidden { store.sidebarsHidden = false }
+                isShowingInspector = show
+            }
+        )
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             PlayerView(player: controller.player, showsControls: false)
@@ -62,7 +74,7 @@ struct ClipDetailView: View {
             guard !Task.isCancelled else { return }
             await controller.applyEffects()
         }
-        .inspector(isPresented: $isShowingInspector) {
+        .inspector(isPresented: inspectorShown) {
             ClipInspectorView(clip: clip, controller: controller)
                 .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
                 .inspectorColumnWidth(min: 220, ideal: 260, max: 400)
@@ -70,9 +82,9 @@ struct ClipDetailView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Inspector", systemImage: "sidebar.trailing") {
-                    isShowingInspector.toggle()
+                    inspectorShown.wrappedValue.toggle()
                 }
-                .help(isShowingInspector ? "Hide the inspector" : "Show the inspector")
+                .help(inspectorShown.wrappedValue ? "Hide the inspector" : "Show the inspector")
             }
         }
         .onAppear { keyMonitor.start(controller) }

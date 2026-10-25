@@ -389,3 +389,32 @@ struct FullScreenControlsTests {
         #expect(!transport.isPlaying)
     }
 }
+
+struct HideSidebarsTests {
+    /// Hiding and showing both sidebars, in the clip and timeline views, settles without a layout loop.
+    @Test func togglingSidebarsSettles() async throws {
+        let dir = try TestVideo.tempDirectory()
+        let url = try await TestVideo.make(in: dir, name: "clip", seconds: 1, size: CGSize(width: 720, height: 480))
+        let store = ProjectStore(exporter: ExportManager.test())
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1200, height: 760),
+                              styleMask: [.titled, .resizable, .closable], backing: .buffered, defer: false)
+        window.contentView = NSHostingView(rootView: ContentView().environment(store).environment(store.exporter))
+        window.orderFront(nil)
+        defer { window.orderOut(nil) }
+
+        let clips = store.importFiles([url])
+        store.addToTimeline(clips)
+        for selection in [[SidebarItem.clip(clips[0].id)], [.timeline]] {
+            store.selection = Set(selection)
+            for hidden in [true, false, true, false] {
+                store.sidebarsHidden = hidden
+                for _ in 0..<8 {
+                    try await Task.sleep(for: .milliseconds(40))
+                    window.contentView?.layoutSubtreeIfNeeded()
+                    window.displayIfNeeded()
+                }
+            }
+        }
+        #expect(!store.sidebarsHidden)
+    }
+}

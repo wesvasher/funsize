@@ -2,7 +2,20 @@ import AVKit
 import SwiftUI
 
 struct TimelineDetailView: View {
+    @Environment(ProjectStore.self) private var store
     @State private var isShowingInspector = true
+
+    /// The inspector, hidden while both sidebars are hidden (⌘.). Showing it by hand
+    /// brings the left sidebar back too.
+    private var inspectorShown: Binding<Bool> {
+        Binding(
+            get: { isShowingInspector && !store.sidebarsHidden },
+            set: { show in
+                if show, store.sidebarsHidden { store.sidebarsHidden = false }
+                isShowingInspector = show
+            }
+        )
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -14,14 +27,14 @@ struct TimelineDetailView: View {
         // No minimum size beside the inspector, or the split view re-layouts in a loop (see ClipDetailView).
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
         .clipped()
-        .inspector(isPresented: $isShowingInspector) {
+        .inspector(isPresented: inspectorShown) {
             TimelineInspectorView()
                 .inspectorColumnWidth(min: 240, ideal: 270, max: 360)
         }
         .toolbar {
             ToolbarItem {
                 Button("Inspector", systemImage: "sidebar.trailing") {
-                    isShowingInspector.toggle()
+                    inspectorShown.wrappedValue.toggle()
                 }
                 .help("Show or hide the trim inspector")
             }

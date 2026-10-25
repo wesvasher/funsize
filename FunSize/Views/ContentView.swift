@@ -4,17 +4,25 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @Environment(ProjectStore.self) private var store
     @Environment(\.openSettings) private var openSettings
+    @State private var columnVisibility = NavigationSplitViewVisibility.all
 
     var body: some View {
         @Bindable var store = store
 
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             SidebarView()
                 .navigationSplitViewColumnWidth(min: 220, ideal: 270, max: 400)
         } detail: {
             DetailView()
         }
         .toolbar { ExportToolbar() }
+        .onChange(of: store.sidebarsHidden) { _, hidden in
+            withAnimation { columnVisibility = hidden ? .detailOnly : .all }
+        }
+        .onChange(of: columnVisibility) { _, visibility in
+            // Showing the sidebar by hand brings the inspector back too.
+            if visibility != .detailOnly, store.sidebarsHidden { store.sidebarsHidden = false }
+        }
         .fileImporter(
             isPresented: $store.isImporting,
             allowedContentTypes: [.audiovisualContent],

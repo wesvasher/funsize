@@ -40,6 +40,11 @@ struct ProjectCommands: Commands {
 
     var body: some Commands {
         CommandGroup(after: .sidebar) {
+            Button(store?.sidebarsHidden == true ? "Show Sidebars" : "Hide Sidebars") {
+                withAnimation { store?.sidebarsHidden.toggle() }
+            }
+            .keyboardShortcut(".", modifiers: .command)
+            .disabled(store == nil)
             Button("Play Full Screen") { store?.playFullScreen() }
                 .keyboardShortcut("f", modifiers: .command)
                 .disabled(store?.fullScreenSource == nil)

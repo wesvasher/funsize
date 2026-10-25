@@ -307,6 +307,11 @@ final class ProjectStore {
         }
     }
 
+    // MARK: Hiding the sidebars
+
+    /// Both the left sidebar and the right inspector are hidden (View › Hide Sidebars, ⌘.).
+    var sidebarsHidden = false
+
     // MARK: Full-screen playback
 
     /// What the Play Full Screen button plays: set by the clip or timeline view on screen.
