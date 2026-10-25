@@ -133,19 +133,20 @@ private struct Readout: View {
 /// Filmstrip scrubber with the in/out range highlighted.
 ///
 /// Click or drag to move the playhead. When a range is marked, drag the yellow
-/// handles to move the in and out points. Hold Shift while dragging for fine control.
+/// handles to move the in and out points. Hold Shift while dragging for fine control,
+/// or Shift-Command for extra-fine control.
 private struct Scrubber: View {
     let controller: ClipPlayerController
     let clip: Clip
 
     private enum Target { case playhead, inPoint, outPoint }
 
-    /// Where a drag started, so Shift can switch to fine control mid-drag without jumping.
+    /// Where a drag started, so the speed can change mid-drag without jumping.
     private struct DragAnchor {
         var target: Target
         var value: Double
         var x: CGFloat
-        var precise: Bool
+        var speed: Double
         var latest: Double
     }
 
@@ -153,8 +154,12 @@ private struct Scrubber: View {
 
     private let height: CGFloat = 40
     private let handleWidth: CGFloat = 12
-    /// With Shift held, the mouse moves the point at one tenth the speed.
-    private let preciseScale = 0.1
+    /// How fast the point follows the mouse: Shift for 1/10 speed, Shift-Command for 1/50.
+    private static func dragSpeed(for flags: NSEvent.ModifierFlags) -> Double {
+        if flags.contains([.shift, .command]) { return 0.02 }
+        if flags.contains(.shift) { return 0.1 }
+        return 1
+    }
 
     var body: some View {
         GeometryReader { proxy in
@@ -226,7 +231,7 @@ private struct Scrubber: View {
         .frame(width: handleWidth, height: height)
         .contentShape(Rectangle().inset(by: -4))
         .pointerStyle(.columnResize)
-        .help(edge == .leading ? "Drag to move the in point. Hold Shift for fine control." : "Drag to move the out point. Hold Shift for fine control.")
+        .help(edge == .leading ? "Drag to move the in point. Hold Shift for fine control, Shift-Command for extra fine." : "Drag to move the out point. Hold Shift for fine control, Shift-Command for extra fine.")
         .accessibilityLabel(edge == .leading ? "In point" : "Out point")
     }
 
@@ -234,25 +239,24 @@ private struct Scrubber: View {
         DragGesture(minimumDistance: target == .playhead ? 0 : 1, coordinateSpace: .named("scrubber"))
             .onChanged { value in
                 let x = value.location.x
-                let precise = NSEvent.modifierFlags.contains(.shift)
+                let speed = Self.dragSpeed(for: NSEvent.modifierFlags)
 
                 if anchor == nil {
                     let start: Double = switch target {
                     case .playhead:
                         // A plain click jumps to the spot; a Shift-click keeps the playhead where it is.
-                        precise ? controller.currentTime : Double(min(max(0, x / width), 1)) * duration
+                        speed < 1 ? controller.currentTime : Double(min(max(0, x / width), 1)) * duration
                     case .inPoint: clip.markedRange.lowerBound
                     case .outPoint: clip.markedRange.upperBound
                     }
-                    anchor = DragAnchor(target: target, value: start, x: x, precise: precise, latest: start)
-                } else if anchor?.precise != precise, let current = anchor {
-                    // Shift pressed or released mid-drag: continue from here at the new speed.
-                    anchor = DragAnchor(target: target, value: current.latest, x: x, precise: precise, latest: current.latest)
+                    anchor = DragAnchor(target: target, value: start, x: x, speed: speed, latest: start)
+                } else if anchor?.speed != speed, let current = anchor {
+                    // Modifier keys changed mid-drag: continue from here at the new speed.
+                    anchor = DragAnchor(target: target, value: current.latest, x: x, speed: speed, latest: current.latest)
                 }
 
                 guard var current = anchor else { return }
-                let scale = precise ? preciseScale : 1
-                let seconds = min(max(0, current.value + Double((x - current.x) / width) * duration * scale), duration)
+                let seconds = min(max(0, current.value + Double((x - current.x) / width) * duration * speed), duration)
                 current.latest = seconds
                 anchor = current
 
