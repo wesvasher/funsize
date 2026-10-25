@@ -360,3 +360,32 @@ struct SettingsWindowTests {
         }
     }
 }
+
+struct FullScreenControlsTests {
+    /// Draws the strip over a test video and saves it, so its look can be checked.
+    @Test func stripDrawsAndControlsPlayback() async throws {
+        let dir = try TestVideo.tempDirectory()
+        let url = try await TestVideo.make(in: dir, name: "clip", seconds: 2, size: CGSize(width: 640, height: 480))
+        let player = AVPlayer(url: url)
+        let transport = FullScreenTransport(player: player)
+        defer { transport.stop() }
+
+        let host = NSHostingView(rootView: FullScreenControls(transport: transport).background(.gray))
+        host.frame = CGRect(x: 0, y: 0, width: 1200, height: 40)
+        try await Task.sleep(for: .milliseconds(300))
+        transport.seek(to: 0.8)
+        host.layoutSubtreeIfNeeded()
+        let rep = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: rep)
+        try rep.representation(using: .png, properties: [:])!
+            .write(to: FileManager.default.temporaryDirectory.appending(path: "fullscreen-strip.png"))
+
+        #expect(transport.duration > 1.9)
+        transport.togglePlayPause()
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(transport.isPlaying)
+        transport.togglePlayPause()
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(!transport.isPlaying)
+    }
+}
