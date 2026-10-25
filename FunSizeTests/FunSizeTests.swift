@@ -102,15 +102,34 @@ enum TestVideo {
     static func make(
         in dir: URL, name: String, seconds: Int, size: CGSize, fps: Int32 = 30,
         codec: AVVideoCodecType = .h264,
+        pixelAspect: (Int, Int)? = nil,
+        cleanApertureWidth: Int? = nil,
+        transform: CGAffineTransform = .identity,
         draw: ((_ frame: Int, _ pixels: CVPixelBuffer) -> Void)? = nil
     ) async throws -> URL {
         let url = dir.appending(path: "\(name).mov")
         let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
-        let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
+        var settings: [String: Any] = [
             AVVideoCodecKey: codec,
             AVVideoWidthKey: Int(size.width),
             AVVideoHeightKey: Int(size.height),
-        ])
+        ]
+        if let (h, v) = pixelAspect {
+            settings[AVVideoPixelAspectRatioKey] = [
+                AVVideoPixelAspectRatioHorizontalSpacingKey: h,
+                AVVideoPixelAspectRatioVerticalSpacingKey: v,
+            ]
+        }
+        if let cleanApertureWidth {
+            settings[AVVideoCleanApertureKey] = [
+                AVVideoCleanApertureWidthKey: cleanApertureWidth,
+                AVVideoCleanApertureHeightKey: Int(size.height),
+                AVVideoCleanApertureHorizontalOffsetKey: 0,
+                AVVideoCleanApertureVerticalOffsetKey: 0,
+            ]
+        }
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
+        input.transform = transform
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
             kCVPixelBufferWidthKey as String: Int(size.width),
@@ -439,5 +458,51 @@ struct WindowLayoutTests {
             window.displayIfNeeded()
         }
         #expect(store.timeline.count == 1)
+    }
+}
+
+/// SD captures (like DV from Hi8/VHS) store 720×480 pixels meant to be shown at 640×480.
+struct PictureShapeTests {
+    /// Hi8 capture files say "640 wide" twice: a 10:11 pixel aspect tag and a 0.889 scale.
+    static let squeeze = CGAffineTransform(scaleX: 640.0 / 720.0, y: 1)
+
+    @Test(arguments: [
+        (true, false),  // pixel aspect tag only
+        (false, true),  // transform scale only
+        (true, true),   // both, like the Hi8 captures (used to come out 582 wide)
+    ])
+    func sdCaptureShowsAt640x480(tagged: Bool, scaled: Bool) async throws {
+        let dir = try TestVideo.tempDirectory()
+        let url = try await TestVideo.make(
+            in: dir, name: "sd", seconds: 1, size: CGSize(width: 720, height: 480), codec: .proRes422,
+            pixelAspect: tagged ? (10, 11) : nil, cleanApertureWidth: tagged ? 704 : nil,
+            transform: scaled ? Self.squeeze : .identity
+        )
+
+        let clip = Clip(url: url)
+        await MediaLoader.load(clip)
+        #expect(clip.encodedSize == CGSize(width: 720, height: 480))
+        #expect(clip.displaySize == CGSize(width: 640, height: 480))
+
+        let timeline = try await CompositionBuilder.build([.init(url: url, start: 0, end: 1)])
+        #expect(timeline.videoComposition?.renderSize == CGSize(width: 640, height: 480))
+
+        let deinterlaced = try await Deinterlacer.videoComposition(for: AVURLAsset(url: url), fieldOrder: .bottomFirst)
+        #expect(deinterlaced?.renderSize == CGSize(width: 640, height: 480))
+    }
+
+    @Test func squeezedClipFillsTimelineFrame() {
+        // A 720-wide squeezed clip in a 640×480 timeline fills it exactly: no crop, no bars.
+        let t = CompositionBuilder.fitTransform(
+            natural: CGSize(width: 720, height: 480), preferred: Self.squeeze, into: CGSize(width: 640, height: 480)
+        )
+        let rect = CGRect(x: 0, y: 0, width: 720, height: 480).applying(t)
+        #expect(abs(rect.minX) < 0.01 && abs(rect.width - 640) < 0.01 && abs(rect.height - 480) < 0.01)
+    }
+
+    @Test func rotatedPhoneVideoIsUnchanged() {
+        let rotate = CGAffineTransform(a: 0, b: 1, c: -1, d: 0, tx: 1080, ty: 0)
+        let geometry = VideoGeometry(format: nil, naturalSize: CGSize(width: 1920, height: 1080), preferredTransform: rotate)
+        #expect(geometry.displaySize == CGSize(width: 1080, height: 1920))
     }
 }

@@ -18,21 +18,16 @@ enum MediaLoader {
             clip.duration = try await asset.load(.duration).seconds
 
             if let track = try await asset.loadTracks(withMediaType: .video).first {
-                let (size, transform, fps, formats) = try await track.load(.naturalSize, .preferredTransform, .nominalFrameRate, .formatDescriptions)
-                let rect = CGRect(origin: .zero, size: size).applying(transform)
-                clip.displaySize = CGSize(width: abs(rect.width), height: abs(rect.height))
+                let (fps, formats) = try await track.load(.nominalFrameRate, .formatDescriptions)
+                let geometry = try await VideoGeometry.load(track)
+                clip.displaySize = geometry.displaySize
+                clip.encodedSize = geometry.encodedSize
                 clip.frameRate = fps
                 if let format = formats.first {
                     (clip.isInterlaced, clip.detectedFieldOrder) = Deinterlacer.detect(format)
                     clip.videoCodec = codecName(CMFormatDescriptionGetMediaSubType(format))
-                    let dimensions = CMVideoFormatDescriptionGetDimensions(format)
-                    clip.encodedSize = CGSize(width: Int(dimensions.width), height: Int(dimensions.height))
                     clip.pixelAspectRatio = pixelAspectRatio(format)
                     clip.colorSpace = colorSpaceName(format)
-                    // Show the shape the video is meant to be seen at (e.g. 720×480 DV → 654×480).
-                    let presented = CMVideoFormatDescriptionGetPresentationDimensions(format, usePixelAspectRatio: true, useCleanAperture: false)
-                    let shaped = CGRect(origin: .zero, size: presented).applying(transform)
-                    clip.displaySize = CGSize(width: abs(shaped.width).rounded(), height: abs(shaped.height).rounded())
                 }
                 clip.videoBitRate = try? await track.load(.estimatedDataRate)
             } else {

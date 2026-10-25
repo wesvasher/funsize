@@ -57,13 +57,14 @@ enum CompositionBuilder {
             let asset = AVURLAsset(url: segment.url)
 
             if let source = try await asset.loadTracks(withMediaType: .video).first {
-                let (size, transform, fps) = try await source.load(.naturalSize, .preferredTransform, .nominalFrameRate)
+                let fps = try await source.load(.nominalFrameRate)
+                let geometry = try await VideoGeometry.load(source)
                 try videoTrack.insertTimeRange(range, of: source, at: cursor)
-                placements.append(Placement(at: cursor, naturalSize: size, transform: transform))
+                placements.append(Placement(at: cursor, naturalSize: geometry.encodedSize, transform: geometry.transform))
                 frameRate = max(frameRate, fps)
                 if renderSize == nil {
-                    let rect = CGRect(origin: .zero, size: size).applying(transform)
-                    renderSize = CGSize(width: evenFloor(abs(rect.width)), height: evenFloor(abs(rect.height)))
+                    let size = geometry.displaySize
+                    renderSize = CGSize(width: evenFloor(size.width), height: evenFloor(size.height))
                 }
             } else {
                 videoTrack.insertEmptyTimeRange(CMTimeRange(start: cursor, duration: range.duration))
@@ -110,7 +111,8 @@ enum CompositionBuilder {
         return Result(composition: composition, videoComposition: videoComposition, duration: cursor.seconds)
     }
 
-    /// Applies the clip's rotation, then scales and centers it inside the render frame.
+    /// Applies the clip's shape correction and rotation, then scales and centers it inside the render frame.
+    /// `natural` is the stored pixel size of the source frames.
     static func fitTransform(natural: CGSize, preferred: CGAffineTransform, into render: CGSize) -> CGAffineTransform {
         let rect = CGRect(origin: .zero, size: natural).applying(preferred)
         var transform = preferred.concatenating(CGAffineTransform(translationX: -rect.minX, y: -rect.minY))

@@ -38,7 +38,7 @@ struct ClipDetailView: View {
         .inspector(isPresented: $isShowingInspector) {
             ClipInspectorView(clip: clip)
                 .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
-                .inspectorColumnWidth(min: 250, ideal: 290, max: 400)
+                .inspectorColumnWidth(min: 220, ideal: 260, max: 400)
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {

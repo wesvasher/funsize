@@ -37,10 +37,11 @@ nonisolated enum Deinterlacer {
     }
 
     /// A video composition that plays or exports `asset` deinterlaced at double frame rate,
-    /// scaled to correct the pixel shape (so 720×480 4:3 footage isn't stretched).
+    /// scaled to correct the pixel shape (720×480 4:3 footage comes out 640×480).
     static func videoComposition(for asset: AVAsset, fieldOrder: FieldOrder) async throws -> AVVideoComposition? {
         guard let track = try await asset.loadTracks(withMediaType: .video).first else { return nil }
-        let (formats, minFrameDuration, naturalSize) = try await track.load(.formatDescriptions, .minFrameDuration, .naturalSize)
+        let minFrameDuration = try await track.load(.minFrameDuration)
+        let geometry = try await VideoGeometry.load(track)
         let duration = try await asset.load(.duration)
 
         var sourceFrameDuration = minFrameDuration
@@ -48,10 +49,8 @@ nonisolated enum Deinterlacer {
             sourceFrameDuration = CMTime(value: 1001, timescale: 30000)
         }
 
-        var size = naturalSize
-        if let format = formats.first {
-            size = CMVideoFormatDescriptionGetPresentationDimensions(format, usePixelAspectRatio: true, useCleanAperture: false)
-        }
+        // Output at the picture's real shape, e.g. 720×480 DV → 640×480.
+        let size = geometry.displaySize
         let renderSize = CGSize(width: max(2, (size.width / 2).rounded() * 2), height: max(2, (size.height / 2).rounded() * 2))
 
         let instruction = DeinterlaceInstruction(
