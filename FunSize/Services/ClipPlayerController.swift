@@ -1,5 +1,6 @@
 import AVFoundation
 import Observation
+import VideoToolbox
 
 /// Drives playback, scrubbing, and in/out marking for the clip preview.
 @Observable
@@ -46,6 +47,15 @@ final class ClipPlayerController {
     /// True while the user holds "Show Original".
     private(set) var isShowingOriginal = false
 
+    /// A still frame shown over the player while it switches versions, so the view never flashes black.
+    private(set) var freezeFrame: CGImage?
+    /// Reads decoded frames from each version, to fill `freezeFrame`.
+    @ObservationIgnored private var frameOutputs: [ObjectIdentifier: AVPlayerItemVideoOutput] = [:]
+    /// The last frame seen from each version, so switching back shows the right picture at once.
+    @ObservationIgnored private var storedFrames: [ObjectIdentifier: (time: CMTime, image: CGImage)] = [:]
+    /// Bumped on every switch so an older switch can't remove a newer one's still frame.
+    @ObservationIgnored private var switchCount = 0
+
     func load(_ clip: Clip) {
         guard clip.id != self.clip?.id else { return }
         self.clip = clip
@@ -54,6 +64,10 @@ final class ClipPlayerController {
         effectsItem = item
         originalItem = nil
         isShowingOriginal = false
+        frameOutputs = [:]
+        storedFrames = [:]
+        freezeFrame = nil
+        attachFrameOutput(to: item)
         install(item)
         appliedSettings = EnhanceSettings()
         currentTime = 0
@@ -69,14 +83,16 @@ final class ClipPlayerController {
             // The comparison version keeps Timing (deinterlace) so both play at the same frame rate.
             let original = settings.hasEffects ? try await Self.makeItem(url: clip.url, settings: settings.timingOnly) : nil
             guard self.clip?.id == clip.id, !Task.isCancelled else { return }
-            let resumeAt = currentTime, wasPlaying = isPlaying
+            // New versions: frames stored for the old ones no longer apply.
+            frameOutputs = [:]
+            storedFrames = [:]
+            attachFrameOutput(to: item)
+            if let original { attachFrameOutput(to: original) }
             effectsItem = item
             originalItem = original
-            install(isShowingOriginal ? (original ?? item) : item)
             appliedSettings = settings
             clip.effectsError = nil
-            seek(to: resumeAt)
-            if wasPlaying { player.playImmediately(atRate: playbackSpeed) }
+            switchVersion(to: isShowingOriginal ? (original ?? item) : item)
         } catch {
             clip.effectsError = error.localizedDescription
         }
@@ -88,10 +104,65 @@ final class ClipPlayerController {
         guard on != isShowingOriginal else { return }
         isShowingOriginal = on
         guard let target = on ? (originalItem ?? effectsItem) : effectsItem, target !== player.currentItem else { return }
-        let resumeAt = currentTime, wasPlaying = isPlaying
+        switchVersion(to: target)
+    }
+
+    /// Swaps the player to another version at the same moment, covering the swap with a still frame.
+    private func switchVersion(to target: AVPlayerItem) {
+        let outgoing = player.currentItem
+        let time = outgoing?.currentTime() ?? CMTime(seconds: currentTime, preferredTimescale: 90_000)
+        let wasPlaying = isPlaying
+
+        // Show the stored frame of the version we're switching to if it's for this exact moment;
+        // otherwise hold the frame that's on screen now.
+        let outgoingFrame = outgoing.flatMap { storeFrame(of: $0, at: time) }
+        let incomingFrame = storedFrames[ObjectIdentifier(target)].flatMap { $0.time == time ? $0.image : nil }
+        freezeFrame = incomingFrame ?? outgoingFrame
+
+        switchCount += 1
+        let thisSwitch = switchCount
         install(target)
-        seek(to: resumeAt)
+        player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
+            Task { @MainActor in await self?.releaseFreezeFrame(after: thisSwitch, item: target, time: time) }
+        }
         if wasPlaying { player.playImmediately(atRate: playbackSpeed) }
+    }
+
+    /// Removes the still frame once the new version has a frame ready to show.
+    private func releaseFreezeFrame(after switchNumber: Int, item: AVPlayerItem, time: CMTime) async {
+        if let output = frameOutputs[ObjectIdentifier(item)] {
+            for _ in 0..<50 where !output.hasNewPixelBuffer(forItemTime: item.currentTime()) {
+                try? await Task.sleep(for: .milliseconds(10))
+            }
+        }
+        _ = storeFrame(of: item, at: time)
+        // Give the player view a moment to draw the new frame before uncovering it.
+        try? await Task.sleep(for: .milliseconds(40))
+        guard switchNumber == switchCount else { return }
+        freezeFrame = nil
+    }
+
+    private func attachFrameOutput(to item: AVPlayerItem) {
+        let output = AVPlayerItemVideoOutput(pixelBufferAttributes: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+        ])
+        item.add(output)
+        frameOutputs[ObjectIdentifier(item)] = output
+    }
+
+    /// Saves the version's frame at `time` and returns it (or the last one saved, if none is new).
+    private func storeFrame(of item: AVPlayerItem, at time: CMTime) -> CGImage? {
+        let key = ObjectIdentifier(item)
+        if let output = frameOutputs[key],
+           let buffer = output.copyPixelBuffer(forItemTime: time, itemTimeForDisplay: nil) {
+            var image: CGImage?
+            VTCreateCGImageFromCVPixelBuffer(buffer, options: nil, imageOut: &image)
+            if let image {
+                storedFrames[key] = (time, image)
+                return image
+            }
+        }
+        return storedFrames[key]?.image
     }
 
     private static func makeItem(url: URL, settings: EnhanceSettings) async throws -> AVPlayerItem {

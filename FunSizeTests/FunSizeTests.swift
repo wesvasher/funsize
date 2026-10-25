@@ -759,3 +759,33 @@ struct EffectsSetTests {
         #expect(abs(controller.currentTime - 1) < 0.02)
     }
 }
+
+struct NoFlashTests {
+    @Test func switchingShowsAStillFrameUntilReady() async throws {
+        let dir = try TestVideo.tempDirectory()
+        let url = try await EnhanceTests.noisyClip(in: dir, seconds: 2)
+        let clip = Clip(url: url)
+        await MediaLoader.load(clip)
+        let controller = ClipPlayerController()
+        controller.load(clip)
+        clip.denoise = true
+        clip.upscale = .fast
+        await controller.applyEffects()
+        controller.seek(to: 1)
+        try await Task.sleep(for: .milliseconds(700))
+        #expect(controller.freezeFrame == nil)
+
+        // Press: a still frame covers the swap, then goes away once the original is ready.
+        controller.showOriginal(true)
+        #expect(controller.freezeFrame != nil)
+        try await Task.sleep(for: .milliseconds(800))
+        #expect(controller.freezeFrame == nil)
+
+        // Release: the stored effects frame for this moment is shown right away.
+        controller.showOriginal(false)
+        let frame = try #require(controller.freezeFrame)
+        #expect(frame.width == 1280)  // the enhanced frame, not the original
+        try await Task.sleep(for: .milliseconds(800))
+        #expect(controller.freezeFrame == nil)
+    }
+}

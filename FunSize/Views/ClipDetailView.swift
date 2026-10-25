@@ -12,6 +12,17 @@ struct ClipDetailView: View {
             PlayerView(player: controller.player, showsControls: false)
                 .background(.black)
                 .overlay {
+                    // Still frame that covers version switches (Show Original), so there's no black flash.
+                    if let frame = controller.freezeFrame {
+                        Image(decorative: frame, scale: 1)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background(.black)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .overlay {
                     // Click the picture to play or pause.
                     Color.clear
                         .contentShape(Rectangle())
