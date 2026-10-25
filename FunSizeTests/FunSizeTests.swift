@@ -209,3 +209,62 @@ struct InOutTests {
         #expect(abs(duration - 1) < 0.1)
     }
 }
+
+struct HandleAndKeyTests {
+    private func loadedController(seconds: Int = 2) async throws -> (ClipPlayerController, Clip) {
+        let dir = try TestVideo.tempDirectory()
+        let url = try await TestVideo.make(in: dir, name: "clip", seconds: seconds, size: CGSize(width: 320, height: 240))
+        let clip = Clip(url: url)
+        await MediaLoader.load(clip)
+        let controller = ClipPlayerController()
+        controller.load(clip)
+        return (controller, clip)
+    }
+
+    @Test func handlesSnapToFramesAndCantCross() async throws {
+        let (controller, clip) = try await loadedController()
+        clip.inPoint = 0.5
+        clip.outPoint = 1.5
+
+        controller.dragIn(to: 0.71)  // 30 fps: nearest boundary is frame 21
+        #expect(clip.inPoint == 21.0 / 30)
+        #expect(controller.currentTime == 21.0 / 30)  // preview shows the new in frame
+
+        controller.dragIn(to: 1.9)  // can't pass the out point
+        #expect(abs(clip.inPoint! - 44.0 / 30) < 0.0001)
+
+        controller.dragOut(to: 0.1)  // can't pass the in point
+        #expect(abs(clip.outPoint! - 45.0 / 30) < 0.0001)
+        #expect(abs(controller.currentTime - 44.0 / 30) < 0.0001)  // preview shows the last included frame
+
+        controller.dragOut(to: 99)  // clamps to the end
+        #expect(clip.outPoint == clip.duration)
+    }
+
+    @Test func keyboardShortcuts() async throws {
+        let (controller, clip) = try await loadedController()
+        func press(_ chars: String, keyCode: UInt16, flags: NSEvent.ModifierFlags = []) -> Bool {
+            let event = NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: 0,
+                context: nil, characters: chars, charactersIgnoringModifiers: chars, isARepeat: false, keyCode: keyCode
+            )!
+            return PlaybackKeyMonitor.perform(event, on: controller)
+        }
+
+        #expect(press(" ", keyCode: 49))
+        #expect(controller.isPlaying)
+        #expect(press(" ", keyCode: 49))
+        #expect(!controller.isPlaying)
+
+        controller.seek(to: 0.5)
+        #expect(press("i", keyCode: 34))
+        #expect(clip.inPoint == 0.5)
+        #expect(press("→", keyCode: 124))
+        #expect(controller.currentFrameNumber == 17)
+        #expect(press("o", keyCode: 31))
+        #expect(clip.outPoint != nil)
+
+        #expect(!press("a", keyCode: 0))  // other keys pass through
+        #expect(!press(" ", keyCode: 49, flags: .command))
+    }
+}

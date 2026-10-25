@@ -109,6 +109,26 @@ final class ClipPlayerController {
         if let inPoint = clip.inPoint, inPoint >= time { clip.inPoint = nil }
     }
 
+    /// Moves the in point to the frame boundary nearest `seconds` and shows that frame.
+    func dragIn(to seconds: Double) {
+        guard let clip else { return }
+        let outBoundary = Int(((clip.outPoint ?? duration) * clock.fps).rounded())
+        let boundary = min(max(0, Int((seconds * clock.fps).rounded())), max(0, outBoundary - 1))
+        clip.inPoint = clock.seconds(ofFrame: boundary)
+        pause()
+        seek(to: clock.seconds(ofFrame: boundary))
+    }
+
+    /// Moves the out point to the frame boundary nearest `seconds` and shows the last included frame.
+    func dragOut(to seconds: Double) {
+        guard let clip else { return }
+        let inBoundary = Int(((clip.inPoint ?? 0) * clock.fps).rounded())
+        let boundary = min(max(inBoundary + 1, Int((seconds * clock.fps).rounded())), frameCount)
+        clip.outPoint = min(duration, clock.seconds(ofFrame: boundary))
+        pause()
+        seek(to: clock.seconds(ofFrame: boundary - 1))
+    }
+
     func clearInOut() {
         clip?.inPoint = nil
         clip?.outPoint = nil
