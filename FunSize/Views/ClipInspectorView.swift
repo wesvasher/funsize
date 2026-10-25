@@ -398,8 +398,8 @@ private struct InspectorSection<Accessory: View, Content: View>: View {
     }
 }
 
-/// Makes the surrounding scroll view use the slim overlay scroller that only
-/// appears while scrolling, instead of the wide always-visible one.
+/// Gives the surrounding scroll view an always-visible scroller at the small size,
+/// instead of the regular-width one.
 private struct ThinScrollers: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView { Probe() }
     func updateNSView(_ nsView: NSView, context: Context) {}
@@ -424,7 +424,8 @@ private struct ThinScrollers: NSViewRepresentable {
 
         private func apply() {
             guard let scrollView = enclosingScrollView else { return }
-            scrollView.scrollerStyle = .overlay
+            scrollView.scrollerStyle = .legacy
+            scrollView.autohidesScrollers = false
             scrollView.verticalScroller?.controlSize = .small
             scrollView.horizontalScroller?.controlSize = .small
         }
