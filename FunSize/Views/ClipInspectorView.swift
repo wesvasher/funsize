@@ -89,6 +89,7 @@ struct ClipInspectorView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .background(ThinScrollers())
         }
         .font(.subheadline)
         .controlSize(.small)
@@ -345,30 +346,91 @@ private struct ModelStatusView: View {
 // MARK: Building blocks
 
 /// A small uppercase heading over a two-column grid of rows.
+/// Click the heading to collapse or expand it; the choice is remembered per section.
 private struct InspectorSection<Accessory: View, Content: View>: View {
     let title: String
     let accessory: Accessory
     let content: Content
+    @AppStorage private var isCollapsed: Bool
 
     init(_ title: String, @ViewBuilder accessory: () -> Accessory, @ViewBuilder content: () -> Content) {
         self.title = title
         self.accessory = accessory()
         self.content = content()
+        _isCollapsed = AppStorage(wrappedValue: false, "inspectorCollapsed.\(title)")
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(title.uppercased())
-                    .font(.caption2.weight(.semibold))
+            HStack(alignment: .center, spacing: 4) {
+                Button {
+                    withAnimation(.snappy(duration: 0.2)) { isCollapsed.toggle() }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 8, weight: .bold))
+                            .rotationEffect(.degrees(isCollapsed ? 0 : 90))
+                            .frame(width: 8)
+                        Text(title.uppercased())
+                            .font(.caption2.weight(.semibold))
+                        Spacer(minLength: 4)
+                    }
                     .foregroundStyle(.secondary)
-                Spacer(minLength: 4)
-                accessory
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(isCollapsed ? "Show \(title)" : "Hide \(title)")
+                .accessibilityLabel(title)
+                .accessibilityValue(isCollapsed ? "Collapsed" : "Expanded")
+
+                if !isCollapsed {
+                    accessory
+                }
             }
             Divider()
-            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 8, verticalSpacing: 4) {
-                content
+            if !isCollapsed {
+                Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 8, verticalSpacing: 4) {
+                    content
+                }
+                .transition(.opacity)
             }
+        }
+    }
+}
+
+/// Makes the surrounding scroll view use the slim overlay scroller that only
+/// appears while scrolling, instead of the wide always-visible one.
+private struct ThinScrollers: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { Probe() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class Probe: NSView {
+        private var observer: NSObjectProtocol?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            apply()
+            if observer == nil {
+                // macOS resets the style when the system setting or mouse changes.
+                observer = NotificationCenter.default.addObserver(
+                    forName: NSScroller.preferredScrollerStyleDidChangeNotification, object: nil, queue: .main
+                ) { [weak self] _ in
+                    MainActor.assumeIsolated {
+                        DispatchQueue.main.async { self?.apply() }
+                    }
+                }
+            }
+        }
+
+        private func apply() {
+            guard let scrollView = enclosingScrollView else { return }
+            scrollView.scrollerStyle = .overlay
+            scrollView.verticalScroller?.controlSize = .small
+            scrollView.horizontalScroller?.controlSize = .small
+        }
+
+        isolated deinit {
+            if let observer { NotificationCenter.default.removeObserver(observer) }
         }
     }
 }
