@@ -41,7 +41,7 @@ struct ProjectCommands: Commands {
     var body: some Commands {
         CommandGroup(after: .sidebar) {
             Button("Play Full Screen") { store?.playFullScreen() }
-                .keyboardShortcut("f", modifiers: [.command, .shift])
+                .keyboardShortcut("f", modifiers: .command)
                 .disabled(store?.fullScreenSource == nil)
             Divider()
         }

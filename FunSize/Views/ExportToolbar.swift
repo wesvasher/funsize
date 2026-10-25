@@ -7,10 +7,10 @@ struct ExportToolbar: ToolbarContent {
 
     var body: some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
-            // ⇧⌘F lives on View › Play Full Screen, which works wherever the focus is.
+            // ⌘F lives on View › Play Full Screen, which works wherever the focus is.
             Button("Play Full Screen", systemImage: "play.rectangle") { store.playFullScreen() }
                 .disabled(store.fullScreenSource == nil)
-                .help(store.isTimelineSelected ? "Play the timeline full screen (⇧⌘F)" : "Play the clip full screen (⇧⌘F)")
+                .help(store.isTimelineSelected ? "Play the timeline full screen (⌘F)" : "Play the clip full screen (⌘F)")
         }
         ToolbarItem(placement: .primaryAction) {
             ExportMenu()
