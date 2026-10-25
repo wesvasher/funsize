@@ -113,6 +113,33 @@ final class Clip: Identifiable {
         )
     }
 
+    /// The LUT a newly imported clip gets: the Apple Log conversion from Settings › Color
+    /// for Apple Log footage, otherwise none.
+    var defaultLUTID: UUID? {
+        guard logFormat != nil, let auto = ColorSettings.autoLUTForAppleLog,
+              LUTLibrary.shared.lut(id: auto) != nil else { return nil }
+        return auto
+    }
+
+    /// Whether everything set in the inspector is as it was when the clip was imported.
+    var isAtDefaults: Bool {
+        !deinterlace && fieldOrderChoice == nil && !showCaptions
+            && !denoise && denoiseStrength == 0.5 && upscale == .off && sharpen == 0
+            && lutID == defaultLUTID && lutIntensity == 1 && grade.isIdentity
+    }
+
+    /// Puts everything set in the inspector back as it was when the clip was imported:
+    /// timing, captions, effects, LUT, and grade. In and out marks are kept.
+    func resetAll() {
+        deinterlace = false
+        fieldOrderChoice = nil
+        showCaptions = false
+        resetEffects()
+        lutID = defaultLUTID
+        lutIntensity = 1
+        grade = ColorGrade()
+    }
+
     /// Turns the Effects section back to its defaults (Timing is left alone).
     func resetEffects() {
         denoise = false

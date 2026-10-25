@@ -169,3 +169,40 @@ struct GradePipelineTests {
         #expect(plain.x - dark.x > 0.1, "exposure −1 darkens: \(plain) → \(dark)")
     }
 }
+
+struct ResetAllTests {
+    @Test func resetAllRestoresImportDefaultsButKeepsMarks() {
+        let clip = Clip(url: URL(filePath: "/tmp/x.mov"))
+        clip.displaySize = CGSize(width: 640, height: 480)
+        #expect(clip.isAtDefaults)
+
+        clip.deinterlace = true
+        clip.fieldOrderChoice = .topFirst
+        clip.showCaptions = true
+        clip.denoise = true
+        clip.upscale = .fast
+        clip.sharpen = 0.4
+        clip.lutID = ColorLUT.builtIns[4].id
+        clip.lutIntensity = 0.3
+        clip.grade.exposure = 1
+        clip.inPoint = 1
+        #expect(!clip.isAtDefaults)
+
+        clip.resetAll()
+        #expect(clip.isAtDefaults)
+        #expect(clip.lutID == nil && clip.grade.isIdentity && !clip.enhanceSettings.isActive)
+        #expect(clip.inPoint == 1)
+    }
+
+    @Test func appleLogFootageKeepsItsConversion() {
+        let clip = Clip(url: URL(filePath: "/tmp/log.mov"))
+        clip.displaySize = CGSize(width: 1920, height: 1080)
+        clip.logFormat = "Apple Log"
+        let conversion = clip.defaultLUTID
+        #expect(conversion == ColorSettings.autoLUTForAppleLog)
+        clip.lutID = nil
+        #expect(!clip.isAtDefaults)
+        clip.resetAll()
+        #expect(clip.lutID == conversion && clip.isAtDefaults)
+    }
+}

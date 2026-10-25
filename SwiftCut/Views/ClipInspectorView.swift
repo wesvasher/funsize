@@ -15,8 +15,53 @@ struct ClipInspectorView: View {
     @Environment(\.openSettings) private var openSettings
     @State private var isNamingPreset = false
     @State private var presetName = ""
+    @State private var isConfirmingReset = false
 
     var body: some View {
+        VStack(spacing: 0) {
+            sections
+            Divider()
+            footer
+        }
+        .font(.subheadline)
+        .controlSize(.small)
+    }
+
+    /// Buttons that stay put below the scrolling sections (and keep the scroll bar
+    /// clear of the window's rounded corner).
+    private var footer: some View {
+        HStack(spacing: 8) {
+            if clip.canEnhance {
+                PressAndHoldButton(
+                    title: "Show Original",
+                    systemImage: controller?.isShowingOriginal == true ? "eye.slash" : "eye",
+                    isEnabled: clip.enhanceSettings.hasLook && controller != nil
+                ) { pressed in
+                    controller?.showOriginal(pressed)
+                }
+                .help("Hold to see the video without its effects, LUT, and grade. Release to see them again.")
+            }
+            Button {
+                isConfirmingReset = true
+            } label: {
+                Label("Reset All", systemImage: "arrow.counterclockwise")
+                    .frame(maxWidth: .infinity)
+            }
+            .disabled(clip.isAtDefaults)
+            .help("Put timing, captions, effects, LUT, and grade back to how they were when the video was imported")
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
+        .padding(.bottom, 10)
+        .background(.bar)
+        .confirmationDialog("Reset all settings for “\(clip.name)”?", isPresented: $isConfirmingReset) {
+            Button("Reset All", role: .destructive) { clip.resetAll() }
+        } message: {
+            Text("Timing, captions, effects, LUT, and grade go back to how they were when the video was imported. Its subclips share these settings, so they change too. In and out marks are kept. You can undo this with Edit › Undo.")
+        }
+    }
+
+    private var sections: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 if let subclip {
@@ -103,8 +148,6 @@ struct ClipInspectorView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(ThinScrollers())
         }
-        .font(.subheadline)
-        .controlSize(.small)
     }
 
     /// Frame timing: turning interlaced fields into frames.
@@ -143,18 +186,6 @@ struct ClipInspectorView: View {
             }
         } content: {
             if clip.canEnhance {
-                GridRow {
-                    PressAndHoldButton(
-                        title: "Show Original",
-                        systemImage: controller?.isShowingOriginal == true ? "eye.slash" : "eye",
-                        isEnabled: clip.enhanceSettings.hasLook && controller != nil
-                    ) { pressed in
-                        controller?.showOriginal(pressed)
-                    }
-                    .help("Hold to see the clip without effects or LUT. Release to see them again.")
-                    .gridCellColumns(2)
-                }
-
                 GridRow {
                     InspectorLabel("Reduce Noise")
                     Toggle("On", isOn: $clip.denoise)

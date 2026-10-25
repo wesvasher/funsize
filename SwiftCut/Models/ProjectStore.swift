@@ -128,8 +128,7 @@ final class ProjectStore {
             Task {
                 await MediaLoader.load(clip)
                 // New Apple Log clips get the conversion chosen in Settings › Color.
-                if clip.logFormat != nil, clip.lutID == nil, let auto = ColorSettings.autoLUTForAppleLog,
-                   LUTLibrary.shared.lut(id: auto) != nil {
+                if clip.lutID == nil, let auto = clip.defaultLUTID {
                     clip.lutID = auto
                 }
             }
