@@ -99,11 +99,15 @@ enum TestVideo {
         return url
     }
 
-    static func make(in dir: URL, name: String, seconds: Int, size: CGSize, fps: Int32 = 30) async throws -> URL {
+    static func make(
+        in dir: URL, name: String, seconds: Int, size: CGSize, fps: Int32 = 30,
+        codec: AVVideoCodecType = .h264,
+        draw: ((_ frame: Int, _ pixels: CVPixelBuffer) -> Void)? = nil
+    ) async throws -> URL {
         let url = dir.appending(path: "\(name).mov")
         let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
-            AVVideoCodecKey: AVVideoCodecType.h264,
+            AVVideoCodecKey: codec,
             AVVideoWidthKey: Int(size.width),
             AVVideoHeightKey: Int(size.height),
         ])
@@ -121,10 +125,14 @@ enum TestVideo {
             var buffer: CVPixelBuffer?
             CVPixelBufferPoolCreatePixelBuffer(nil, adaptor.pixelBufferPool!, &buffer)
             let pixels = try #require(buffer)
-            CVPixelBufferLockBaseAddress(pixels, [])
-            let shade = UInt8(frame * 4 % 255)
-            memset(CVPixelBufferGetBaseAddress(pixels), Int32(shade), CVPixelBufferGetDataSize(pixels))
-            CVPixelBufferUnlockBaseAddress(pixels, [])
+            if let draw {
+                draw(frame, pixels)
+            } else {
+                CVPixelBufferLockBaseAddress(pixels, [])
+                let shade = UInt8(frame * 4 % 255)
+                memset(CVPixelBufferGetBaseAddress(pixels), Int32(shade), CVPixelBufferGetDataSize(pixels))
+                CVPixelBufferUnlockBaseAddress(pixels, [])
+            }
             adaptor.append(pixels, withPresentationTime: CMTime(value: CMTimeValue(frame), timescale: fps))
         }
         input.markAsFinished()
@@ -266,5 +274,90 @@ struct HandleAndKeyTests {
 
         #expect(!press("a", keyCode: 0))  // other keys pass through
         #expect(!press(" ", keyCode: 49, flags: .command))
+    }
+}
+
+struct DeinterlaceTests {
+    /// Fills even rows (top field) with one gray and odd rows (bottom field) with another.
+    static func paintFields(_ pixels: CVPixelBuffer, top: UInt8, bottom: UInt8) {
+        CVPixelBufferLockBaseAddress(pixels, [])
+        let base = CVPixelBufferGetBaseAddress(pixels)!
+        let stride = CVPixelBufferGetBytesPerRow(pixels)
+        for y in 0..<CVPixelBufferGetHeight(pixels) {
+            memset(base + y * stride, Int32(y.isMultiple(of: 2) ? top : bottom), stride)
+        }
+        CVPixelBufferUnlockBaseAddress(pixels, [])
+    }
+
+    static func meanBrightness(_ image: CGImage) -> Double {
+        let width = 32, height = 32
+        var bytes = [UInt8](repeating: 0, count: width * height)
+        let context = CGContext(data: &bytes, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width,
+                                space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)!
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return Double(bytes.reduce(0) { $0 + Int($1) }) / Double(bytes.count)
+    }
+
+    @Test func bobKeepsOneFieldAndFillsTheOther() throws {
+        var source: CVPixelBuffer?, output: CVPixelBuffer?
+        CVPixelBufferCreate(nil, 64, 8, kCVPixelFormatType_32BGRA, nil, &source)
+        CVPixelBufferCreate(nil, 64, 8, kCVPixelFormatType_32BGRA, nil, &output)
+        let src = try #require(source), out = try #require(output)
+        Self.paintFields(src, top: 200, bottom: 20)
+
+        for (keepOdd, expected) in [(false, UInt8(200)), (true, UInt8(20))] {
+            Deinterlacer.bob(src, into: out, keepOddRows: keepOdd)
+            CVPixelBufferLockBaseAddress(out, .readOnly)
+            let base = CVPixelBufferGetBaseAddress(out)!.assumingMemoryBound(to: UInt8.self)
+            let stride = CVPixelBufferGetBytesPerRow(out)
+            for y in 0..<8 { #expect(base[y * stride + 5] == expected) }
+            CVPixelBufferUnlockBaseAddress(out, .readOnly)
+        }
+    }
+
+    @Test func exportsInterlacedAsDoubleFrameRate() async throws {
+        let dir = try TestVideo.tempDirectory()
+        // Top field bright, bottom field dark: deinterlaced frames should alternate bright/dark.
+        let url = try await TestVideo.make(in: dir, name: "interlaced", seconds: 1, size: CGSize(width: 720, height: 480),
+                                           codec: .proRes422) { _, pixels in
+            Self.paintFields(pixels, top: 230, bottom: 25)
+        }
+        let asset = AVURLAsset(url: url)
+        let composition = try #require(try await Deinterlacer.videoComposition(for: asset, fieldOrder: .topFirst))
+        #expect(composition.frameDuration == CMTime(value: 1, timescale: 60))
+
+        let manager = ExportManager()
+        let job = try #require(manager.export(asset: asset, videoComposition: composition, name: "out", format: .proRes, folder: dir))
+        await job.task?.value
+        #expect(job.state == .finished)
+
+        let exported = AVURLAsset(url: job.outputURL)
+        let track = try #require(try await exported.loadTracks(withMediaType: .video).first)
+        let fps = try await track.load(.nominalFrameRate)
+        #expect(abs(fps - 60) < 1)
+
+        let generator = AVAssetImageGenerator(asset: exported)
+        generator.requestedTimeToleranceBefore = .zero
+        generator.requestedTimeToleranceAfter = .zero
+        let first = try await generator.image(at: CMTime(value: 10, timescale: 60)).image
+        let second = try await generator.image(at: CMTime(value: 11, timescale: 60)).image
+        #expect(Self.meanBrightness(first) > 180)  // top field
+        #expect(Self.meanBrightness(second) < 70)  // bottom field
+    }
+
+    @Test func sdClipsOfferDeinterlacing() {
+        let clip = Clip(url: URL(fileURLWithPath: "/tmp/tape.mov"))
+        clip.displaySize = CGSize(width: 720, height: 480)
+        clip.frameRate = 29.97
+        #expect(clip.canDeinterlace)
+        #expect(clip.outputFrameRate == 29.97)
+        clip.deinterlace = true
+        #expect(abs(clip.outputFrameRate - 59.94) < 0.01)
+        #expect(clip.deinterlacedRateLabel == "60p")
+
+        clip.displaySize = CGSize(width: 1920, height: 1080)
+        #expect(!clip.canDeinterlace)  // HD only when the file says it's interlaced
+        clip.isInterlaced = true
+        #expect(clip.canDeinterlace)
     }
 }

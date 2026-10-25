@@ -44,9 +44,21 @@ final class ClipPlayerController {
         }
     }
 
+    /// Turns deinterlacing on or off in the preview to match the clip's setting.
+    func updateVideoComposition() async {
+        guard let clip, let item = player.currentItem else { return }
+        if clip.isDeinterlacing {
+            item.videoComposition = try? await Deinterlacer.videoComposition(for: item.asset, fieldOrder: clip.fieldOrder)
+        } else {
+            item.videoComposition = nil
+        }
+        // Redraw the paused frame with the new setting.
+        seek(to: currentTime)
+    }
+
     // MARK: Timing
 
-    var clock: FrameClock { FrameClock(fps: Double(clip?.frameRate ?? 0)) }
+    var clock: FrameClock { FrameClock(fps: Double(clip?.outputFrameRate ?? 0)) }
     var duration: Double { clip?.duration ?? 0 }
     var frameCount: Int { clock.frameCount(duration: duration) }
 

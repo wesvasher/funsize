@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		05C443DCAED5110432A9496C /* CompositionBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF604566AA3BB8BCC60A5F56 /* CompositionBuilder.swift */; };
+		08F98D73A5518B4FE448E45C /* Deinterlacer.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD0432B6B749B8DDAF905877 /* Deinterlacer.swift */; };
 		0E5034E8A26E5F3B44F6DB85 /* FunSizeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32D7412C35C3F9A223B2EC81 /* FunSizeApp.swift */; };
 		21C61C96AE18DC7455793F9E /* ProjectStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58695AD125524C438F965970 /* ProjectStore.swift */; };
 		2CABDE1F94EA7880F2FEF2A2 /* MediaLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AE75A8DBE4568FA8A01FED4 /* MediaLoader.swift */; };
@@ -61,6 +62,7 @@
 		AF604566AA3BB8BCC60A5F56 /* CompositionBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositionBuilder.swift; sourceTree = "<group>"; };
 		C68CC0E4CF9DA8193CE595A7 /* FrameClock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameClock.swift; sourceTree = "<group>"; };
 		CB4DD8807247B8B5A52F3CDB /* ClipDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipDetailView.swift; sourceTree = "<group>"; };
+		CD0432B6B749B8DDAF905877 /* Deinterlacer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Deinterlacer.swift; sourceTree = "<group>"; };
 		DE625BBFB11AECFAC072A9C5 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
 		EC36977A67B9BC9DBE6F7250 /* TimelineDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineDetailView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -129,6 +131,7 @@
 			children = (
 				7EC7518137FCBF656A3159D6 /* ClipPlayerController.swift */,
 				AF604566AA3BB8BCC60A5F56 /* CompositionBuilder.swift */,
+				CD0432B6B749B8DDAF905877 /* Deinterlacer.swift */,
 				058F160D94BA4B6C15A6DC46 /* ExportManager.swift */,
 				3AE75A8DBE4568FA8A01FED4 /* MediaLoader.swift */,
 			);
@@ -237,6 +240,7 @@
 				B3560DB5809D2413A6EC5204 /* ClipPlayerController.swift in Sources */,
 				05C443DCAED5110432A9496C /* CompositionBuilder.swift in Sources */,
 				77FEAC945596F29AA6530CED /* ContentView.swift in Sources */,
+				08F98D73A5518B4FE448E45C /* Deinterlacer.swift in Sources */,
 				E6C74FD7DAD27D8E8B56B794 /* ExportFormat.swift in Sources */,
 				31BC2E746B84C033485C07FF /* ExportManager.swift in Sources */,
 				A260224BF4FA233E101EB31D /* ExportToolbar.swift in Sources */,

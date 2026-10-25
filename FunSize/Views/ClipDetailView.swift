@@ -27,10 +27,64 @@ struct ClipDetailView: View {
         .onChange(of: clip.id, initial: true) {
             controller.load(clip)
         }
+        .task(id: DeinterlaceSetting(clip: clip)) {
+            await controller.updateVideoComposition()
+        }
+        .toolbar {
+            if clip.canDeinterlace {
+                ToolbarItem {
+                    DeinterlaceControls(clip: clip)
+                }
+            }
+        }
         .onAppear { keyMonitor.start(controller) }
         .onDisappear {
             keyMonitor.stop()
             controller.pause()
+        }
+    }
+}
+
+/// Changes whenever the preview needs a new deinterlace setup.
+private struct DeinterlaceSetting: Hashable {
+    let id: UUID
+    let on: Bool
+    let fieldOrder: FieldOrder
+
+    init(clip: Clip) {
+        id = clip.id
+        on = clip.isDeinterlacing
+        fieldOrder = clip.fieldOrder
+    }
+}
+
+/// Toolbar toggle for 60i → 60p, plus a field order menu.
+private struct DeinterlaceControls: View {
+    @Bindable var clip: Clip
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Toggle(isOn: $clip.deinterlace) {
+                Label("Deinterlace to \(clip.deinterlacedRateLabel)", systemImage: "square.split.1x2")
+            }
+            .help("Turn each interlaced field into its own frame (\(String(format: "%.4g", clip.frameRate * 2))i → \(clip.deinterlacedRateLabel)). Applies to the preview and exports.")
+
+            if clip.deinterlace {
+                Menu {
+                    Picker("Field Order", selection: $clip.fieldOrderChoice) {
+                        Text("Automatic (\((clip.detectedFieldOrder ?? .bottomFirst).title))").tag(FieldOrder?.none)
+                        Divider()
+                        ForEach(FieldOrder.allCases) { order in
+                            Text(order.title).tag(FieldOrder?.some(order))
+                        }
+                    }
+                    .pickerStyle(.inline)
+                } label: {
+                    Text(clip.fieldOrder == .topFirst ? "Top First" : "Bottom First")
+                }
+                .fixedSize()
+                .help("If motion looks jittery or steps backward, switch the field order.")
+            }
         }
     }
 }
@@ -65,7 +119,9 @@ private struct TransportBar: View {
                         value: "\(clock.timecode(seconds: controller.currentTime)) / \(clock.timecode(frames: controller.frameCount))")
                 Readout(title: "Frame",
                         value: "\(controller.currentFrameNumber.formatted()) / \(controller.frameCount.formatted())")
-                Readout(title: "Frame Rate", value: String(format: "%.3g fps", clock.fps))
+                Readout(title: "Frame Rate", value: clip.isDeinterlacing
+                        ? String(format: "%.4gp", clock.fps)
+                        : clip.isInterlaced == true ? String(format: "%.4gi", clock.fps * 2) : String(format: "%.4g fps", clock.fps))
 
                 Spacer(minLength: 0)
             }

@@ -195,7 +195,17 @@ final class ProjectStore {
                 end: CMTime(seconds: range.upperBound, preferredTimescale: 90_000)
             )
         }
-        exporter.export(asset: AVURLAsset(url: clip.url), timeRange: timeRange, name: clip.name, format: format)
+        let asset = AVURLAsset(url: clip.url)
+        guard clip.isDeinterlacing, !format.isAudioOnly else {
+            exporter.export(asset: asset, timeRange: timeRange, name: clip.name, format: format)
+            return
+        }
+        let name = "\(clip.name) \(clip.deinterlacedRateLabel)"
+        let fieldOrder = clip.fieldOrder
+        Task {
+            let composition = try? await Deinterlacer.videoComposition(for: asset, fieldOrder: fieldOrder)
+            exporter.export(asset: asset, videoComposition: composition, timeRange: timeRange, name: name, format: format)
+        }
     }
 
     func exportTimeline(as format: ExportFormat) {

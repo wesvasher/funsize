@@ -28,6 +28,30 @@ final class Clip: Identifiable {
     var inPoint: Double?
     var outPoint: Double?
 
+    /// From the file: `true` interlaced, `false` progressive, `nil` the file doesn't say.
+    var isInterlaced: Bool?
+    var detectedFieldOrder: FieldOrder?
+    /// User choice: turn each field into a frame (60i → 60p).
+    var deinterlace = false
+    /// User override for field order; `nil` means use what was detected.
+    var fieldOrderChoice: FieldOrder?
+
+    /// Field order to use. Without file info, assume bottom first (DV and most SD captures).
+    var fieldOrder: FieldOrder { fieldOrderChoice ?? detectedFieldOrder ?? .bottomFirst }
+
+    /// Offer deinterlacing for interlaced files and for any SD video (many SD captures aren't labeled).
+    var canDeinterlace: Bool {
+        hasVideo && (isInterlaced == true || (displaySize.height > 0 && displaySize.height <= 576))
+    }
+
+    var isDeinterlacing: Bool { deinterlace && canDeinterlace }
+
+    /// Frame rate of what plays and exports: doubled when deinterlacing.
+    var outputFrameRate: Float { isDeinterlacing ? frameRate * 2 : frameRate }
+
+    /// "60p" for 29.97 fps interlaced video, "50p" for PAL.
+    var deinterlacedRateLabel: String { "\(Int((frameRate * 2).rounded()))p" }
+
     init(url: URL) {
         self.url = url
         self.name = url.deletingPathExtension().lastPathComponent
@@ -54,7 +78,9 @@ final class Clip: Identifiable {
             parts.append("\(Int(displaySize.width))×\(Int(displaySize.height))")
         }
         if hasVideo, frameRate > 0 {
-            parts.append(String(format: "%.3g fps", frameRate))
+            parts.append(isInterlaced == true
+                ? String(format: "%.4gi", frameRate * 2)
+                : String(format: "%.4g fps", frameRate))
         }
         return parts.joined(separator: " · ")
     }

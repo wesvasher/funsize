@@ -18,10 +18,13 @@ enum MediaLoader {
             clip.duration = try await asset.load(.duration).seconds
 
             if let track = try await asset.loadTracks(withMediaType: .video).first {
-                let (size, transform, fps) = try await track.load(.naturalSize, .preferredTransform, .nominalFrameRate)
+                let (size, transform, fps, formats) = try await track.load(.naturalSize, .preferredTransform, .nominalFrameRate, .formatDescriptions)
                 let rect = CGRect(origin: .zero, size: size).applying(transform)
                 clip.displaySize = CGSize(width: abs(rect.width), height: abs(rect.height))
                 clip.frameRate = fps
+                if let format = formats.first {
+                    (clip.isInterlaced, clip.detectedFieldOrder) = Deinterlacer.detect(format)
+                }
             } else {
                 clip.hasVideo = false
             }
