@@ -7,10 +7,23 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		05C443DCAED5110432A9496C /* CompositionBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF604566AA3BB8BCC60A5F56 /* CompositionBuilder.swift */; };
 		0E5034E8A26E5F3B44F6DB85 /* FunSizeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32D7412C35C3F9A223B2EC81 /* FunSizeApp.swift */; };
+		21C61C96AE18DC7455793F9E /* ProjectStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58695AD125524C438F965970 /* ProjectStore.swift */; };
+		2CABDE1F94EA7880F2FEF2A2 /* MediaLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AE75A8DBE4568FA8A01FED4 /* MediaLoader.swift */; };
+		31BC2E746B84C033485C07FF /* ExportManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 058F160D94BA4B6C15A6DC46 /* ExportManager.swift */; };
+		4211809B12D78D91A0146CA3 /* Clip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D0765D5527B6289E6319418 /* Clip.swift */; };
 		5676F75A068BD98A51C79783 /* FunSizeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9506352228FE4A81529374F2 /* FunSizeTests.swift */; };
+		59FD7B2EB09B9F18D053DFA8 /* TimelineInspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC287DF22BA75C83537AD161 /* TimelineInspectorView.swift */; };
 		62C90815E8DB103FDD4DF408 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 91EEAB40D409F3DA9177CE4E /* Assets.xcassets */; };
-		6B820AA65350A810B72B4709 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DBA35425E3F6EBB8947C3DF /* ContentView.swift */; };
+		645F950D64DDFF8A714A519D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06CD73C7FCAE863B633825C /* SettingsView.swift */; };
+		77FEAC945596F29AA6530CED /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 414974BBC0C760255B1E455C /* ContentView.swift */; };
+		8B6AA344B0CB5AEE84CAB8FA /* ClipDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB4DD8807247B8B5A52F3CDB /* ClipDetailView.swift */; };
+		A260224BF4FA233E101EB31D /* ExportToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D33E36EAC0683EB9A11F58C /* ExportToolbar.swift */; };
+		E6C74FD7DAD27D8E8B56B794 /* ExportFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BB23B5AB67E265BCED52AF1 /* ExportFormat.swift */; };
+		E6E2CD0D93946BACFEF35F4F /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE625BBFB11AECFAC072A9C5 /* SidebarView.swift */; };
+		F2313D2516B6B5FF7B7772D5 /* TimelineEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 728F9B0D9225E79BC57A72F9 /* TimelineEditorView.swift */; };
+		F524E7A707F8ADEB5E6A15A2 /* TimelineDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC36977A67B9BC9DBE6F7250 /* TimelineDetailView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -24,12 +37,26 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		058F160D94BA4B6C15A6DC46 /* ExportManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportManager.swift; sourceTree = "<group>"; };
+		1BB23B5AB67E265BCED52AF1 /* ExportFormat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportFormat.swift; sourceTree = "<group>"; };
+		2D33E36EAC0683EB9A11F58C /* ExportToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportToolbar.swift; sourceTree = "<group>"; };
 		32D7412C35C3F9A223B2EC81 /* FunSizeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FunSizeApp.swift; sourceTree = "<group>"; };
+		3AE75A8DBE4568FA8A01FED4 /* MediaLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaLoader.swift; sourceTree = "<group>"; };
+		414974BBC0C760255B1E455C /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		4BF2C60831286D49FE643741 /* FunSize.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FunSize.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		4D0765D5527B6289E6319418 /* Clip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Clip.swift; sourceTree = "<group>"; };
 		55C1854074C9685942B9FCDA /* FunSizeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FunSizeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		8DBA35425E3F6EBB8947C3DF /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		58695AD125524C438F965970 /* ProjectStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectStore.swift; sourceTree = "<group>"; };
+		728F9B0D9225E79BC57A72F9 /* TimelineEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineEditorView.swift; sourceTree = "<group>"; };
+		8B885416B094F73E88EC9B56 /* FunSize.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FunSize.entitlements; sourceTree = "<group>"; };
 		91EEAB40D409F3DA9177CE4E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		9506352228FE4A81529374F2 /* FunSizeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FunSizeTests.swift; sourceTree = "<group>"; };
+		A06CD73C7FCAE863B633825C /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		AC287DF22BA75C83537AD161 /* TimelineInspectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineInspectorView.swift; sourceTree = "<group>"; };
+		AF604566AA3BB8BCC60A5F56 /* CompositionBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositionBuilder.swift; sourceTree = "<group>"; };
+		CB4DD8807247B8B5A52F3CDB /* ClipDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipDetailView.swift; sourceTree = "<group>"; };
+		DE625BBFB11AECFAC072A9C5 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
+		EC36977A67B9BC9DBE6F7250 /* TimelineDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineDetailView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -37,10 +64,38 @@
 			isa = PBXGroup;
 			children = (
 				91EEAB40D409F3DA9177CE4E /* Assets.xcassets */,
-				8DBA35425E3F6EBB8947C3DF /* ContentView.swift */,
+				8B885416B094F73E88EC9B56 /* FunSize.entitlements */,
 				32D7412C35C3F9A223B2EC81 /* FunSizeApp.swift */,
+				382C2BEBE1C1A486C7476A7A /* Models */,
+				994012F3FCBE86B62FFEF3A5 /* Services */,
+				339EE759BE7933E28AF81036 /* Views */,
 			);
 			path = FunSize;
+			sourceTree = "<group>";
+		};
+		339EE759BE7933E28AF81036 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				CB4DD8807247B8B5A52F3CDB /* ClipDetailView.swift */,
+				414974BBC0C760255B1E455C /* ContentView.swift */,
+				2D33E36EAC0683EB9A11F58C /* ExportToolbar.swift */,
+				A06CD73C7FCAE863B633825C /* SettingsView.swift */,
+				DE625BBFB11AECFAC072A9C5 /* SidebarView.swift */,
+				EC36977A67B9BC9DBE6F7250 /* TimelineDetailView.swift */,
+				728F9B0D9225E79BC57A72F9 /* TimelineEditorView.swift */,
+				AC287DF22BA75C83537AD161 /* TimelineInspectorView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		382C2BEBE1C1A486C7476A7A /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				4D0765D5527B6289E6319418 /* Clip.swift */,
+				1BB23B5AB67E265BCED52AF1 /* ExportFormat.swift */,
+				58695AD125524C438F965970 /* ProjectStore.swift */,
+			);
+			path = Models;
 			sourceTree = "<group>";
 		};
 		8A4C4F22CC43EC3BF60FF407 /* Products */ = {
@@ -59,6 +114,16 @@
 				F0DB1D0D9B24ABD733112DDC /* FunSizeTests */,
 				8A4C4F22CC43EC3BF60FF407 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		994012F3FCBE86B62FFEF3A5 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				AF604566AA3BB8BCC60A5F56 /* CompositionBuilder.swift */,
+				058F160D94BA4B6C15A6DC46 /* ExportManager.swift */,
+				3AE75A8DBE4568FA8A01FED4 /* MediaLoader.swift */,
+			);
+			path = Services;
 			sourceTree = "<group>";
 		};
 		F0DB1D0D9B24ABD733112DDC /* FunSizeTests */ = {
@@ -158,8 +223,21 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				6B820AA65350A810B72B4709 /* ContentView.swift in Sources */,
+				4211809B12D78D91A0146CA3 /* Clip.swift in Sources */,
+				8B6AA344B0CB5AEE84CAB8FA /* ClipDetailView.swift in Sources */,
+				05C443DCAED5110432A9496C /* CompositionBuilder.swift in Sources */,
+				77FEAC945596F29AA6530CED /* ContentView.swift in Sources */,
+				E6C74FD7DAD27D8E8B56B794 /* ExportFormat.swift in Sources */,
+				31BC2E746B84C033485C07FF /* ExportManager.swift in Sources */,
+				A260224BF4FA233E101EB31D /* ExportToolbar.swift in Sources */,
 				0E5034E8A26E5F3B44F6DB85 /* FunSizeApp.swift in Sources */,
+				2CABDE1F94EA7880F2FEF2A2 /* MediaLoader.swift in Sources */,
+				21C61C96AE18DC7455793F9E /* ProjectStore.swift in Sources */,
+				645F950D64DDFF8A714A519D /* SettingsView.swift in Sources */,
+				E6E2CD0D93946BACFEF35F4F /* SidebarView.swift in Sources */,
+				F524E7A707F8ADEB5E6A15A2 /* TimelineDetailView.swift in Sources */,
+				F2313D2516B6B5FF7B7772D5 /* TimelineEditorView.swift in Sources */,
+				59FD7B2EB09B9F18D053DFA8 /* TimelineInspectorView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -234,7 +312,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 0.1.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
@@ -242,6 +320,8 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 6.0;
 			};
@@ -252,14 +332,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = FunSize/FunSize.entitlements;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = FunSize;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.video";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -291,14 +371,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = FunSize/FunSize.entitlements;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = FunSize;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.video";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -371,13 +451,15 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 0.1.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 6.0;
 			};

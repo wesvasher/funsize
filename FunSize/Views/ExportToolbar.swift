@@ -1,0 +1,156 @@
+import SwiftUI
+
+/// The Export menu (two clicks: open it, pick a format) and the exports progress button.
+struct ExportToolbar: ToolbarContent {
+    @Environment(ProjectStore.self) private var store
+    @Environment(ExportManager.self) private var exporter
+
+    var body: some ToolbarContent {
+        ToolbarItem(placement: .primaryAction) {
+            ExportActivityButton()
+        }
+        ToolbarItem(placement: .primaryAction) {
+            Menu {
+                Section("Video") { buttons(ExportFormat.videoFormats) }
+                Section("Resize") { buttons(ExportFormat.resizeFormats) }
+                Section("Audio") { buttons(ExportFormat.audioFormats) }
+                Divider()
+                Button("Show Export Folder", systemImage: "folder") { exporter.revealDestinationFolder() }
+                SettingsLink { Label("Change Export Folder…", systemImage: "gearshape") }
+            } label: {
+                Label("Export", systemImage: "square.and.arrow.up")
+            }
+            .menuIndicator(.hidden)
+            .disabled(!store.canExport)
+            .help(store.isTimelineSelected ? "Export the timeline" : "Export the selected clips")
+        }
+    }
+
+    private func buttons(_ formats: [ExportFormat]) -> some View {
+        ForEach(formats) { format in
+            Button(format.title, systemImage: format.systemImage) {
+                store.exportSelection(as: format)
+            }
+        }
+    }
+}
+
+private struct ExportActivityButton: View {
+    @Environment(ExportManager.self) private var exporter
+
+    var body: some View {
+        @Bindable var exporter = exporter
+
+        Button {
+            exporter.isShowingActivity.toggle()
+        } label: {
+            if exporter.runningJobs.isEmpty {
+                Label("Exports", systemImage: "arrow.down.circle")
+            } else {
+                ProgressView(value: exporter.overallProgress)
+                    .progressViewStyle(.circular)
+                    .controlSize(.small)
+            }
+        }
+        .help("Show exports")
+        .disabled(exporter.jobs.isEmpty)
+        .popover(isPresented: $exporter.isShowingActivity, arrowEdge: .bottom) {
+            ExportActivityView()
+        }
+    }
+}
+
+struct ExportActivityView: View {
+    @Environment(ExportManager.self) private var exporter
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Exports").font(.headline)
+                Spacer()
+                Button("Clear") { exporter.clearFinished() }
+                    .disabled(exporter.jobs.allSatisfy(\.isRunning))
+            }
+            .padding(12)
+
+            Divider()
+
+            if exporter.jobs.isEmpty {
+                Text("No exports yet")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(24)
+            } else {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(exporter.jobs) { job in
+                            ExportJobRow(job: job)
+                            Divider()
+                        }
+                    }
+                }
+                .frame(maxHeight: 360)
+            }
+
+            Text("Saving to \(exporter.destinationFolder.path(percentEncoded: false).abbreviatingWithTilde)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .padding(12)
+        }
+        .frame(width: 360)
+    }
+}
+
+private struct ExportJobRow: View {
+    let job: ExportJob
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: job.format.systemImage)
+                .font(.title2)
+                .foregroundStyle(.secondary)
+                .frame(width: 28)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(job.outputURL.lastPathComponent)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                switch job.state {
+                case .running:
+                    ProgressView(value: job.progress)
+                case .finished:
+                    Text("Done").font(.caption).foregroundStyle(.secondary)
+                case .cancelled:
+                    Text("Cancelled").font(.caption).foregroundStyle(.secondary)
+                case .failed(let message):
+                    Text(message).font(.caption).foregroundStyle(.red).lineLimit(2)
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            switch job.state {
+            case .running:
+                Button("Cancel", systemImage: "xmark.circle.fill") { job.cancel() }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
+            case .finished:
+                Button("Show in Finder", systemImage: "magnifyingglass.circle.fill") { job.revealInFinder() }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
+            default:
+                EmptyView()
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+}
+
+extension String {
+    var abbreviatingWithTilde: String { (self as NSString).abbreviatingWithTildeInPath }
+}
