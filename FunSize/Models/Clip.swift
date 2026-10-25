@@ -67,7 +67,7 @@ final class Clip: Identifiable {
     var captionName: String?
     var hasCaptions: Bool { captionName != nil }
     /// Show captions over the preview.
-    var showCaptions = true
+    var showCaptions = false
 
     // MARK: Enhancement
 

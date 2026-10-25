@@ -797,12 +797,12 @@ struct CaptionTests {
         let clip = Clip(url: url)
         await MediaLoader.load(clip)
         #expect(!clip.hasCaptions)
-        #expect(clip.showCaptions)  // on by default when captions exist
+        #expect(!clip.showCaptions)  // off by default
 
         let controller = ClipPlayerController()
         #expect(!controller.player.appliesMediaSelectionCriteriaAutomatically)
         controller.load(clip)
-        clip.showCaptions = false
+        clip.showCaptions = true
         await controller.updateCaptions()  // no captions: nothing to change, no crash
     }
 }
