@@ -1,4 +1,4 @@
-# FunSize
+# SwiftCut
 
 A macOS app built with SwiftUI.
 
@@ -9,8 +9,8 @@ A macOS app built with SwiftUI.
 
 ## Getting started
 ```sh
-xcodegen generate   # regenerate FunSize.xcodeproj after editing project.yml
-open FunSize.xcodeproj
+xcodegen generate   # regenerate SwiftCut.xcodeproj after editing project.yml
+open SwiftCut.xcodeproj
 ```
 
-Project settings live in `project.yml`. Add new files under `FunSize/` and re-run `xcodegen generate`.
+Project settings live in `project.yml`. Add new files under `SwiftCut/` and re-run `xcodegen generate`.
