@@ -11,6 +11,9 @@ struct TimelineDetailView: View {
             TimelineEditorView()
                 .frame(height: 180)
         }
+        // No minimum size beside the inspector, or the split view re-layouts in a loop (see ClipDetailView).
+        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+        .clipped()
         .inspector(isPresented: $isShowingInspector) {
             TimelineInspectorView()
                 .inspectorColumnWidth(min: 240, ideal: 270, max: 360)

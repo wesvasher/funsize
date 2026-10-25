@@ -393,3 +393,51 @@ struct InspectorAndSpeedTests {
         controller.pause()
     }
 }
+
+/// Shows the full window with a clip selected, like dropping a movie in.
+/// Layout feedback loops crash here with "more Update Constraints in Window passes than there are views".
+struct WindowLayoutTests {
+    @Test(arguments: [false, true])
+    func clipWindowSettlesWithoutLayoutLoop(interlacedSD: Bool) async throws {
+        let dir = try TestVideo.tempDirectory()
+        let size = interlacedSD ? CGSize(width: 720, height: 480) : CGSize(width: 640, height: 360)
+        let url = try await TestVideo.make(in: dir, name: "clip", seconds: 2, size: size)
+        let store = ProjectStore(exporter: ExportManager())
+
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1200, height: 760),
+                              styleMask: [.titled, .resizable, .closable], backing: .buffered, defer: false)
+        window.contentView = NSHostingView(rootView: ContentView().environment(store).environment(store.exporter))
+        window.orderFront(nil)
+        defer { window.orderOut(nil) }
+
+        store.importAndSelect([url])
+        // Let loading, thumbnails, and playback-time updates run through several display cycles.
+        for _ in 0..<40 {
+            try await Task.sleep(for: .milliseconds(50))
+            window.contentView?.layoutSubtreeIfNeeded()
+            window.displayIfNeeded()
+        }
+        #expect(store.selectedClips.first?.isLoaded == true)
+    }
+
+    @Test func timelineWindowSettlesWithoutLayoutLoop() async throws {
+        let dir = try TestVideo.tempDirectory()
+        let url = try await TestVideo.make(in: dir, name: "clip", seconds: 2, size: CGSize(width: 640, height: 360))
+        let store = ProjectStore(exporter: ExportManager())
+
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1200, height: 760),
+                              styleMask: [.titled, .resizable, .closable], backing: .buffered, defer: false)
+        window.contentView = NSHostingView(rootView: ContentView().environment(store).environment(store.exporter))
+        window.orderFront(nil)
+        defer { window.orderOut(nil) }
+
+        store.addToTimeline(store.importFiles([url]))
+        store.selection = [.timeline]
+        for _ in 0..<40 {
+            try await Task.sleep(for: .milliseconds(50))
+            window.contentView?.layoutSubtreeIfNeeded()
+            window.displayIfNeeded()
+        }
+        #expect(store.timeline.count == 1)
+    }
+}

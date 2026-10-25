@@ -24,6 +24,10 @@ struct ClipDetailView: View {
                 store.addToTimeline([clip])
             }
         }
+        // No minimum size: a view beside an inspector that demands a minimum width makes the
+        // split view re-layout in a loop until AppKit aborts (macOS 27). Narrow windows clip instead.
+        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+        .clipped()
         .focusedSceneValue(\.clipPlayer, controller)
         .onChange(of: clip.id, initial: true) {
             controller.load(clip)
@@ -33,6 +37,7 @@ struct ClipDetailView: View {
         }
         .inspector(isPresented: $isShowingInspector) {
             ClipInspectorView(clip: clip)
+                .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
                 .inspectorColumnWidth(min: 250, ideal: 290, max: 400)
         }
         .toolbar {

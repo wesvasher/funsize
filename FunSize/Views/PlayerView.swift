@@ -14,7 +14,17 @@ struct PlayerView: NSViewRepresentable {
         view.showsFullScreenToggleButton = true
         view.allowsPictureInPicturePlayback = true
         view.player = player
+        // The player view's natural size changes when a movie loads. Let SwiftUI
+        // size it instead, or windows with an inspector re-layout in a loop.
+        view.setContentHuggingPriority(.init(1), for: .horizontal)
+        view.setContentHuggingPriority(.init(1), for: .vertical)
+        view.setContentCompressionResistancePriority(.init(1), for: .horizontal)
+        view.setContentCompressionResistancePriority(.init(1), for: .vertical)
         return view
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: AVPlayerView, context: Context) -> CGSize? {
+        proposal.replacingUnspecifiedDimensions(by: CGSize(width: 320, height: 180))
     }
 
     func updateNSView(_ view: AVPlayerView, context: Context) {
