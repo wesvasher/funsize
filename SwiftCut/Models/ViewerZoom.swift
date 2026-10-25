@@ -72,6 +72,30 @@ nonisolated enum ViewerZoom: Hashable, Sendable {
                height: max(0, (display.height - viewport.height) / 2))
     }
 
+    // MARK: Navigator
+
+    /// The part of the picture in view, drawn inside a navigator of size `navigator` that
+    /// stands for the whole picture.
+    /// - Parameter offset: how far the picture has moved from centered, in points (already clamped).
+    static func visibleRect(offset: CGSize, display: CGSize, viewport: CGSize, navigator: CGSize) -> CGRect {
+        guard display.width > 0, display.height > 0 else { return CGRect(origin: .zero, size: navigator) }
+        let width = navigator.width * min(1, viewport.width / display.width)
+        let height = navigator.height * min(1, viewport.height / display.height)
+        // Moving the picture right shows more of its left side.
+        let centerX = navigator.width * (0.5 - offset.width / display.width)
+        let centerY = navigator.height * (0.5 - offset.height / display.height)
+        return CGRect(x: centerX - width / 2, y: centerY - height / 2, width: width, height: height)
+    }
+
+    /// The picture offset (points from centered, clamped) that puts the middle of the view
+    /// at `center`, a point in the navigator.
+    static func offset(navigatorCenter center: CGPoint, navigator: CGSize, display: CGSize, viewport: CGSize) -> CGSize {
+        guard navigator.width > 0, navigator.height > 0 else { return .zero }
+        let offset = CGSize(width: (0.5 - center.x / navigator.width) * display.width,
+                            height: (0.5 - center.y / navigator.height) * display.height)
+        return clamp(offset, display: display, viewport: viewport)
+    }
+
     /// `offset` (points from centered) moved back inside the limits.
     static func clamp(_ offset: CGSize, display: CGSize, viewport: CGSize) -> CGSize {
         let limit = maxPan(display: display, viewport: viewport)

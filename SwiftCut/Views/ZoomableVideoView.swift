@@ -41,6 +41,17 @@ struct ZoomableVideoView: View {
                                       ? (dragStart != nil ? .grabActive : .grabIdle)
                                       : nil)
                 }
+                .overlay(alignment: .bottomTrailing) {
+                    // Zoomed in: a map of the whole picture, with the part in view outlined.
+                    if canPan {
+                        ViewerNavigator(offset: offset, display: display, viewport: viewport) { newOffset in
+                            pan = CGSize(width: newOffset.width / display.width, height: newOffset.height / display.height)
+                        }
+                        .padding(12)
+                        .transition(.opacity)
+                    }
+                }
+                .animation(.easeOut(duration: 0.15), value: canPan)
         }
         .background(.black)
         .clipped()
@@ -96,6 +107,76 @@ struct ZoomableVideoView: View {
     }
 }
 
+/// A small map of the whole picture (outline) with the part in view (colored box).
+/// Drag the box to look around; click anywhere in the map to jump there.
+private struct ViewerNavigator: View {
+    /// How far the picture has moved from centered, in points.
+    let offset: CGSize
+    let display: CGSize
+    let viewport: CGSize
+    let move: (CGSize) -> Void
+
+    /// Where the pointer grabbed the box, from the box's middle, so it doesn't jump.
+    @State private var grab: CGSize?
+
+    private static let maxSize = CGSize(width: 160, height: 110)
+
+    var body: some View {
+        let size = mapSize
+        let visible = ViewerZoom.visibleRect(offset: offset, display: display, viewport: viewport, navigator: size)
+
+        ZStack(alignment: .topLeading) {
+            Rectangle()
+                .strokeBorder(.white.opacity(0.75), lineWidth: 1)
+
+            Rectangle()
+                .fill(Color.accentColor.opacity(0.18))
+                .strokeBorder(Color.accentColor, lineWidth: 2)
+                .frame(width: visible.width, height: visible.height)
+                .offset(x: visible.minX, y: visible.minY)
+        }
+        .frame(width: size.width, height: size.height)
+        .clipped()
+        .padding(6)
+        .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8).strokeBorder(.white.opacity(0.15))
+        }
+        .contentShape(Rectangle())
+        .gesture(dragGesture(size: size, visible: visible))
+        .pointerStyle(grab != nil ? .grabActive : .grabIdle)
+        .help("Drag the box to move around the picture")
+        .accessibilityElement()
+        .accessibilityLabel("Zoom navigator")
+    }
+
+    /// The whole picture's shape, as big as fits in `maxSize`.
+    private var mapSize: CGSize {
+        guard display.width > 0, display.height > 0 else { return Self.maxSize }
+        let scale = min(Self.maxSize.width / display.width, Self.maxSize.height / display.height)
+        return CGSize(width: (display.width * scale).rounded(), height: (display.height * scale).rounded())
+    }
+
+    private func dragGesture(size: CGSize, visible: CGRect) -> some Gesture {
+        // The map sits inside 6 points of padding.
+        DragGesture(minimumDistance: 0, coordinateSpace: .local)
+            .onChanged { value in
+                let start = CGPoint(x: value.startLocation.x - 6, y: value.startLocation.y - 6)
+                if grab == nil {
+                    // Grabbing the box keeps its spot under the pointer; elsewhere, the box centers there.
+                    grab = visible.contains(start)
+                        ? CGSize(width: start.x - visible.midX, height: start.y - visible.midY)
+                        : .zero
+                }
+                let grab = grab ?? .zero
+                let center = CGPoint(x: start.x + value.translation.width - grab.width,
+                                     y: start.y + value.translation.height - grab.height)
+                move(ViewerZoom.offset(navigatorCenter: center, navigator: size, display: display, viewport: viewport))
+            }
+            .onEnded { _ in grab = nil }
+    }
+}
+
 /// Just the video picture, sized to its frame. Used instead of AVPlayerView here because the
 /// zoomed picture can be many times bigger than the window, and a bare player layer
 /// handles that cheaply (the screen compositor scales the video).
@@ -137,6 +218,11 @@ private final class PlayerLayerNSView: NSView {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
+
+    // Never takes clicks. Zoomed in, this view is bigger than the viewer, and SwiftUI's clipping
+    // only hides the overflow: without this it would take clicks meant for the controls around
+    // the viewer. Clicks on the picture go to the SwiftUI layer above it.
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 // MARK: Zoom control
