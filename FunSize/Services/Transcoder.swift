@@ -216,8 +216,9 @@ nonisolated final class Transcoder: @unchecked Sendable {
     }
 
     /// Standard-definition sizes use SD color; anything bigger uses HD (Rec. 709).
+    /// Settings › Color can make everything Rec. 709.
     private static func colorProperties(height: CGFloat) -> [String: String] {
-        height < 720
+        height < 720 && ColorSettings.exportTags == .automatic
             ? [
                 AVVideoColorPrimariesKey: AVVideoColorPrimaries_SMPTE_C,
                 AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,

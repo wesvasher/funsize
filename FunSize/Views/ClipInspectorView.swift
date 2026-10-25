@@ -7,6 +7,8 @@ struct ClipInspectorView: View {
     /// The clip's preview player, for "Show Original".
     var controller: ClipPlayerController?
     @State private var presets = EffectsPresetStore.shared
+    @State private var library = LUTLibrary.shared
+    @Environment(\.openSettings) private var openSettings
     @State private var isNamingPreset = false
     @State private var presetName = ""
 
@@ -84,6 +86,7 @@ struct ClipInspectorView: View {
 
                 if clip.hasVideo {
                     effects
+                    color
                 }
             }
             .padding(.horizontal, 12)
@@ -135,11 +138,11 @@ struct ClipInspectorView: View {
                     PressAndHoldButton(
                         title: "Show Original",
                         systemImage: controller?.isShowingOriginal == true ? "eye.slash" : "eye",
-                        isEnabled: clip.enhanceSettings.hasEffects && controller != nil
+                        isEnabled: clip.enhanceSettings.hasLook && controller != nil
                     ) { pressed in
                         controller?.showOriginal(pressed)
                     }
-                    .help("Hold to see the clip without effects. Release to see them again.")
+                    .help("Hold to see the clip without effects or LUT. Release to see them again.")
                     .gridCellColumns(2)
                 }
 
@@ -229,6 +232,103 @@ struct ClipInspectorView: View {
         } message: {
             Text("Saves Reduce Noise, Enhance, and Sharpen so you can use them on other clips. A set with the same name is replaced.")
         }
+    }
+
+    /// Color: a LUT for grading or converting Apple Log, with a shortcut to Settings › Color.
+    private var color: some View {
+        InspectorSection("Color") {
+            Button {
+                openColorSettings()
+            } label: {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.caption)
+            }
+            .buttonStyle(.borderless)
+            .help("Color settings and LUT library")
+        } content: {
+            if clip.canEnhance {
+                if let log = clip.logFormat {
+                    InspectorRow("Footage", log)
+                }
+                GridRow {
+                    InspectorLabel("LUT")
+                    lutMenu
+                }
+                if clip.lutID != nil, clip.lut == nil {
+                    GridRow {
+                        Label("This LUT is no longer in your library.", systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                            .gridCellColumns(2)
+                    }
+                }
+                if let lut = clip.lut {
+                    GridRow {
+                        Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
+                        Image(nsImage: LUTSwatch.image(for: lut))
+                            .resizable()
+                            .frame(width: 96, height: 28)
+                            .clipShape(RoundedRectangle(cornerRadius: 3))
+                            .help(lut.summary)
+                    }
+                    GridRow {
+                        InspectorLabel("Intensity")
+                        HStack(spacing: 6) {
+                            Slider(value: $clip.lutIntensity, in: 0...1)
+                            Text("\(Int((clip.lutIntensity * 100).rounded()))%")
+                                .monospacedDigit()
+                                .frame(width: 34, alignment: .trailing)
+                        }
+                    }
+                }
+                if clip.logFormat != nil, clip.lutID == nil {
+                    GridRow {
+                        Text("This clip is log footage, so it looks flat until it's converted.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .gridCellColumns(2)
+                    }
+                    GridRow {
+                        Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
+                        Button("Convert to Rec. 709") { clip.lutID = ColorLUT.builtIns[0].id }
+                    }
+                }
+            } else {
+                GridRow {
+                    Text(clip.isRotated ? "Not available for rotated video yet" : "None available for this clip")
+                        .foregroundStyle(.secondary)
+                        .gridCellColumns(2)
+                }
+            }
+        }
+    }
+
+    private var lutMenu: some View {
+        Menu {
+            Toggle("None", isOn: Binding(get: { clip.lutID == nil }, set: { if $0 { clip.lutID = nil } }))
+            Section("Apple Log") { lutItems(library.appleLog) }
+            Section("Looks") { lutItems(library.looks) }
+            if !library.imported.isEmpty {
+                Section("Imported") { lutItems(library.imported) }
+            }
+            Divider()
+            Button("Manage LUTs…") { openColorSettings() }
+        } label: {
+            Text(clip.lut?.name ?? (clip.lutID == nil ? "None" : "Missing LUT"))
+        }
+        .fixedSize()
+        .help("Choose a LUT to grade this clip")
+    }
+
+    private func lutItems(_ luts: [ColorLUT]) -> some View {
+        ForEach(luts) { lut in
+            Toggle(lut.name, isOn: Binding(get: { clip.lutID == lut.id }, set: { if $0 { clip.lutID = lut.id } }))
+        }
+    }
+
+    private func openColorSettings() {
+        UserDefaults.standard.set(SettingsPage.color.rawValue, forKey: SettingsPage.storageKey)
+        openSettings()
     }
 
     /// Save, load, and reset effect settings.

@@ -83,7 +83,7 @@ final class ClipPlayerController {
         do {
             let item = try await Self.makeItem(url: clip.url, settings: settings)
             // The comparison version keeps Timing (deinterlace) so both play at the same frame rate.
-            let original = settings.hasEffects ? try await Self.makeItem(url: clip.url, settings: settings.timingOnly) : nil
+            let original = settings.hasLook ? try await Self.makeItem(url: clip.url, settings: settings.timingOnly) : nil
             guard self.clip?.id == clip.id, !Task.isCancelled else { return }
             // New versions: frames stored for the old ones no longer apply.
             frameOutputs = [:]

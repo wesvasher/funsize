@@ -4,6 +4,7 @@ import SwiftUI
 enum SettingsPage: String, CaseIterable, Identifiable {
     case general
     case appearance
+    case color
     case exportPresets
 
     /// Remembers the last page; other windows set it to open Settings on a page.
@@ -15,6 +16,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         switch self {
         case .general: "General"
         case .appearance: "Appearance"
+        case .color: "Color"
         case .exportPresets: "Export Presets"
         }
     }
@@ -23,6 +25,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         switch self {
         case .general: "gearshape"
         case .appearance: "circle.lefthalf.filled"
+        case .color: "paintpalette"
         case .exportPresets: "square.and.arrow.up.on.square"
         }
     }
@@ -31,6 +34,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         switch self {
         case .general: .gray
         case .appearance: .indigo
+        case .color: .orange
         case .exportPresets: .blue
         }
     }
@@ -62,6 +66,7 @@ struct SettingsView: View {
                 switch page {
                 case .general: GeneralSettingsView()
                 case .appearance: AppearanceSettingsView()
+                case .color: ColorSettingsView()
                 case .exportPresets: ExportPresetsSettingsView()
                 }
             }

@@ -12,6 +12,15 @@ enum MediaLoader {
         return type?.conforms(to: .audiovisualContent) ?? false
     }
 
+    /// "Apple Log" or "Apple Log 2" for iPhone log footage, else `nil`.
+    static func logFormat(_ format: CMFormatDescription) -> String? {
+        guard let value = CMFormatDescriptionGetExtension(format, extensionKey: kCMFormatDescriptionExtension_LogTransferFunction) as? String
+        else { return nil }
+        if #available(macOS 27, *), value == (kCMFormatDescriptionLogTransferFunction_AppleLog2 as String) { return "Apple Log 2" }
+        if value == (kCMFormatDescriptionLogTransferFunction_AppleLog as String) { return "Apple Log" }
+        return "Log"
+    }
+
     static func load(_ clip: Clip) async {
         guard FileManager.default.fileExists(atPath: clip.url.path(percentEncoded: false)) else {
             clip.loadError = "Can't find this file. It may have been moved, renamed, or deleted."
@@ -31,6 +40,7 @@ enum MediaLoader {
                 if let format = formats.first {
                     (clip.isInterlaced, clip.detectedFieldOrder) = Deinterlacer.detect(format)
                     clip.videoCodec = codecName(CMFormatDescriptionGetMediaSubType(format))
+                    clip.logFormat = logFormat(format)
                     clip.pixelAspectRatio = pixelAspectRatio(format)
                     clip.colorSpace = colorSpaceName(format)
                 }

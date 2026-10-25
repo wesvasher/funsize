@@ -71,6 +71,18 @@ final class Clip: Identifiable {
     /// Show captions over the preview.
     var showCaptions = false
 
+    // MARK: Color
+
+    /// "Apple Log" or "Apple Log 2" when the file says it's log footage.
+    var logFormat: String?
+    /// The LUT chosen in the Color section, or `nil` for none.
+    var lutID: UUID?
+    /// 0…1: how strongly the LUT applies.
+    var lutIntensity = 1.0
+
+    /// The chosen LUT, if it's still in the library.
+    var lut: ColorLUT? { LUTLibrary.shared.lut(id: lutID) }
+
     // MARK: Enhancement
 
     var denoise = false
@@ -91,7 +103,8 @@ final class Clip: Identifiable {
             fieldOrder: isDeinterlacing ? fieldOrder : nil,
             denoiseStrength: canEnhance && denoise ? Float(denoiseStrength) : nil,
             upscale: canEnhance ? upscale : .off,
-            sharpen: canEnhance ? Float(sharpen) : 0
+            sharpen: canEnhance ? Float(sharpen) : 0,
+            lut: canEnhance ? lut.map { AppliedLUT(lut: $0, intensity: Float(lutIntensity)) } : nil
         )
     }
 
@@ -114,6 +127,7 @@ final class Clip: Identifiable {
         var parts: [String] = []
         if settings.fieldOrder != nil { parts.append(deinterlacedRateLabel) }
         if settings.denoiseStrength != nil || settings.upscale != .off || settings.sharpen > 0 { parts.append("Enhanced") }
+        if settings.lut != nil { parts.append("Graded") }
         return parts.joined(separator: " ")
     }
 
@@ -144,6 +158,8 @@ final class Clip: Identifiable {
         r.denoiseStrength = denoiseStrength
         r.upscale = upscale
         r.sharpen = sharpen
+        r.lutID = lutID
+        r.lutIntensity = lutIntensity
         return r
     }
 
@@ -159,6 +175,8 @@ final class Clip: Identifiable {
         if denoiseStrength != r.denoiseStrength { denoiseStrength = r.denoiseStrength }
         if upscale != r.upscale { upscale = r.upscale }
         if sharpen != r.sharpen { sharpen = r.sharpen }
+        if lutID != r.lutID { lutID = r.lutID }
+        if lutIntensity != r.lutIntensity { lutIntensity = r.lutIntensity }
     }
 
     var poster: CGImage? { thumbnails.first?.image }

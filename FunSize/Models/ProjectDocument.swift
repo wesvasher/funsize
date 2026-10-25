@@ -29,6 +29,8 @@ nonisolated struct ProjectFile: Codable, Equatable, Sendable {
         var denoiseStrength = 0.5
         var upscale: UpscaleMode = .off
         var sharpen = 0.0
+        var lutID: UUID?
+        var lutIntensity = 1.0
 
         init(id: UUID = UUID(), url: URL, bookmark: Data?) {
             self.id = id
@@ -51,6 +53,8 @@ nonisolated struct ProjectFile: Codable, Equatable, Sendable {
             denoiseStrength = try c.decodeIfPresent(Double.self, forKey: .denoiseStrength) ?? 0.5
             upscale = try c.decodeIfPresent(UpscaleMode.self, forKey: .upscale) ?? .off
             sharpen = try c.decodeIfPresent(Double.self, forKey: .sharpen) ?? 0
+            lutID = try c.decodeIfPresent(UUID.self, forKey: .lutID)
+            lutIntensity = try c.decodeIfPresent(Double.self, forKey: .lutIntensity) ?? 1
         }
     }
 

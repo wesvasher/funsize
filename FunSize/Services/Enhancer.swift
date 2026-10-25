@@ -38,9 +38,16 @@ nonisolated struct EnhanceSettings: Hashable, Sendable {
     var upscale: UpscaleMode = .off
     /// Sharpening amount 0…1; 0 is off.
     var sharpen: Float = 0
+    /// Color LUT (Color section), applied before sharpening.
+    var lut: AppliedLUT?
 
     var isActive: Bool {
-        fieldOrder != nil || hasEffects
+        fieldOrder != nil || hasEffects || lut != nil
+    }
+
+    /// Anything "Show Original" can turn off: effects or a LUT.
+    var hasLook: Bool {
+        hasEffects || lut != nil
     }
 
     /// Anything from the Effects section (as opposed to Timing).
@@ -69,7 +76,7 @@ nonisolated enum EnhanceError: LocalizedError {
 }
 
 /// Builds playable/exportable assets that run clips through the enhancement pipeline:
-/// deinterlace → reduce noise → upscale → sharpen.
+/// deinterlace → reduce noise → upscale → LUT → sharpen.
 nonisolated enum Enhancer {
     /// Neighbor frames the noise filter compares against: one before, two after.
     static let neighborOffsets = [-1, 1, 2]
@@ -414,8 +421,8 @@ nonisolated final class EnhancePipeline {
         if scaler != nil {
             picture = try upscale(picture, time: time, isContinuous: isContinuous)
         }
-        if settings.sharpen > 0 {
-            try sharpen(picture, into: output)
+        if settings.sharpen > 0 || settings.lut != nil {
+            try finish(picture, into: output)
         } else {
             try copy(picture, into: output)
         }
@@ -520,7 +527,8 @@ nonisolated final class EnhancePipeline {
 
     // MARK: Sharpening and output
 
-    private func sharpen(_ picture: CVPixelBuffer, into output: CVPixelBuffer) throws {
+    /// Color LUT, then sharpening, with Core Image.
+    private func finish(_ picture: CVPixelBuffer, into output: CVPixelBuffer) throws {
         if sharpenPool == nil {
             sharpenPool = try Self.pool(width: CVPixelBufferGetWidth(output), height: CVPixelBufferGetHeight(output), format: kCVPixelFormatType_32BGRA)
         }
@@ -528,13 +536,37 @@ nonisolated final class EnhancePipeline {
         try copy(picture, into: scratch)
 
         let color = CGColorSpace(name: CGColorSpace.sRGB)!
-        let image = CIImage(cvPixelBuffer: scratch, options: [.colorSpace: color])
-        let filter = CIFilter(name: "CISharpenLuminance")!
-        filter.setValue(image.clampedToExtent(), forKey: kCIInputImageKey)
-        filter.setValue(Double(settings.sharpen) * 1.5, forKey: kCIInputSharpnessKey)
-        filter.setValue(Double(settings.upscale.factor), forKey: kCIInputRadiusKey)
-        guard let sharpened = filter.outputImage?.cropped(to: image.extent) else { throw EnhanceError.failed("Couldn't sharpen.") }
-        ciContext.render(sharpened, to: output, bounds: image.extent, colorSpace: color)
+        let original = CIImage(cvPixelBuffer: scratch, options: [.colorSpace: color])
+        var image = original
+
+        if let applied = settings.lut {
+            // The cube works on the frame's own values (video code values, or Apple Log),
+            // which is what LUTs are made for.
+            let cube = CIFilter(name: "CIColorCubeWithColorSpace")!
+            cube.setValue(image, forKey: kCIInputImageKey)
+            cube.setValue(applied.lut.size, forKey: "inputCubeDimension")
+            cube.setValue(applied.lut.data, forKey: "inputCubeData")
+            cube.setValue(color, forKey: "inputColorSpace")
+            guard var graded = cube.outputImage else { throw EnhanceError.failed("Couldn't apply the LUT.") }
+            if applied.intensity < 0.999 {
+                let mix = CIFilter(name: "CIMix")!
+                mix.setValue(graded, forKey: kCIInputImageKey)
+                mix.setValue(image, forKey: kCIInputBackgroundImageKey)
+                mix.setValue(max(0, applied.intensity), forKey: kCIInputAmountKey)
+                graded = mix.outputImage ?? graded
+            }
+            image = graded
+        }
+
+        if settings.sharpen > 0 {
+            let filter = CIFilter(name: "CISharpenLuminance")!
+            filter.setValue(image.clampedToExtent(), forKey: kCIInputImageKey)
+            filter.setValue(Double(settings.sharpen) * 1.5, forKey: kCIInputSharpnessKey)
+            filter.setValue(Double(settings.upscale.factor), forKey: kCIInputRadiusKey)
+            guard let sharpened = filter.outputImage?.cropped(to: original.extent) else { throw EnhanceError.failed("Couldn't sharpen.") }
+            image = sharpened
+        }
+        ciContext.render(image.cropped(to: original.extent), to: output, bounds: original.extent, colorSpace: color)
     }
 
     /// Converts format and scales to fit the destination (this also corrects the picture shape).

@@ -73,7 +73,14 @@ final class ProjectStore {
             clip.bookmark = Clip.makeBookmark(for: url)
             clips.append(clip)
             result.append(clip)
-            Task { await MediaLoader.load(clip) }
+            Task {
+                await MediaLoader.load(clip)
+                // New Apple Log clips get the conversion chosen in Settings › Color.
+                if clip.logFormat != nil, clip.lutID == nil, let auto = ColorSettings.autoLUTForAppleLog,
+                   LUTLibrary.shared.lut(id: auto) != nil {
+                    clip.lutID = auto
+                }
+            }
         }
         return result
     }
