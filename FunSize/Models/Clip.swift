@@ -28,6 +28,18 @@ final class Clip: Identifiable {
     var inPoint: Double?
     var outPoint: Double?
 
+    /// Details shown in the inspector. `nil` when the file doesn't say.
+    var containerName: String?
+    var videoCodec: String?
+    var encodedSize: CGSize = .zero
+    var pixelAspectRatio: CGSize?
+    var colorSpace: String?
+    var videoBitRate: Float?
+    var audioCodec: String?
+    var audioSampleRate: Double?
+    var audioChannels: Int?
+    var creationDate: Date?
+
     /// From the file: `true` interlaced, `false` progressive, `nil` the file doesn't say.
     var isInterlaced: Bool?
     var detectedFieldOrder: FieldOrder?

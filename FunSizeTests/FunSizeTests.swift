@@ -361,3 +361,35 @@ struct DeinterlaceTests {
         #expect(clip.canDeinterlace)
     }
 }
+
+struct InspectorAndSpeedTests {
+    @Test func readsFormatDetails() async throws {
+        let dir = try TestVideo.tempDirectory()
+        let url = try await TestVideo.make(in: dir, name: "clip", seconds: 1, size: CGSize(width: 640, height: 360), codec: .proRes422)
+        let clip = Clip(url: url)
+        await MediaLoader.load(clip)
+
+        #expect(clip.videoCodec == "Apple ProRes 422")
+        #expect(clip.encodedSize == CGSize(width: 640, height: 360))
+        #expect(clip.containerName != nil)
+        #expect(MediaLoader.codecName(0x61766331) == "H.264")  // 'avc1'
+        #expect(MediaLoader.codecName(0x64766320) == "DV (NTSC)")  // 'dvc '
+    }
+
+    @Test func playbackSpeedIsSeparateFromFrameRate() async throws {
+        let dir = try TestVideo.tempDirectory()
+        let url = try await TestVideo.make(in: dir, name: "clip", seconds: 2, size: CGSize(width: 320, height: 240))
+        let clip = Clip(url: url)
+        await MediaLoader.load(clip)
+        let controller = ClipPlayerController()
+        controller.load(clip)
+
+        controller.playbackSpeed = 0.5
+        controller.play()
+        #expect(controller.player.rate == 0.5)
+        #expect(controller.clock.fps == 30)  // frame rate unchanged
+        controller.playbackSpeed = 2
+        #expect(controller.player.rate == 2)
+        controller.pause()
+    }
+}

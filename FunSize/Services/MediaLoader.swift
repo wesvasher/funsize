@@ -24,11 +24,33 @@ enum MediaLoader {
                 clip.frameRate = fps
                 if let format = formats.first {
                     (clip.isInterlaced, clip.detectedFieldOrder) = Deinterlacer.detect(format)
+                    clip.videoCodec = codecName(CMFormatDescriptionGetMediaSubType(format))
+                    let dimensions = CMVideoFormatDescriptionGetDimensions(format)
+                    clip.encodedSize = CGSize(width: Int(dimensions.width), height: Int(dimensions.height))
+                    clip.pixelAspectRatio = pixelAspectRatio(format)
+                    clip.colorSpace = colorSpaceName(format)
+                    // Show the shape the video is meant to be seen at (e.g. 720×480 DV → 654×480).
+                    let presented = CMVideoFormatDescriptionGetPresentationDimensions(format, usePixelAspectRatio: true, useCleanAperture: false)
+                    let shaped = CGRect(origin: .zero, size: presented).applying(transform)
+                    clip.displaySize = CGSize(width: abs(shaped.width).rounded(), height: abs(shaped.height).rounded())
                 }
+                clip.videoBitRate = try? await track.load(.estimatedDataRate)
             } else {
                 clip.hasVideo = false
             }
-            clip.hasAudio = !(try await asset.loadTracks(withMediaType: .audio).isEmpty)
+            let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+            clip.hasAudio = !audioTracks.isEmpty
+            if let audio = audioTracks.first, let format = try? await audio.load(.formatDescriptions).first {
+                clip.audioCodec = codecName(CMFormatDescriptionGetMediaSubType(format))
+                if let description = CMAudioFormatDescriptionGetStreamBasicDescription(format)?.pointee {
+                    clip.audioSampleRate = description.mSampleRate
+                    clip.audioChannels = Int(description.mChannelsPerFrame)
+                }
+            }
+            clip.containerName = (try? clip.url.resourceValues(forKeys: [.contentTypeKey]).contentType)?.localizedDescription
+            if let created = try? await asset.load(.creationDate) {
+                clip.creationDate = try? await created.load(.dateValue)
+            }
 
             let values = try? clip.url.resourceValues(forKeys: [.fileSizeKey])
             clip.fileSize = Int64(values?.fileSize ?? 0)
@@ -40,6 +62,50 @@ enum MediaLoader {
         } catch {
             clip.loadError = error.localizedDescription
         }
+    }
+
+    /// Friendly names for common codecs; otherwise the four-letter code.
+    static func codecName(_ code: FourCharCode) -> String {
+        let names: [String: String] = [
+            "avc1": "H.264", "avc3": "H.264", "hvc1": "HEVC (H.265)", "hev1": "HEVC (H.265)",
+            "apco": "Apple ProRes 422 Proxy", "apcs": "Apple ProRes 422 LT", "apcn": "Apple ProRes 422",
+            "apch": "Apple ProRes 422 HQ", "ap4h": "Apple ProRes 4444", "ap4x": "Apple ProRes 4444 XQ",
+            "aprn": "Apple ProRes RAW", "aprh": "Apple ProRes RAW HQ",
+            "dvc ": "DV (NTSC)", "dvcp": "DV (PAL)", "dvpp": "DVCPRO (PAL)", "dv5n": "DVCPRO50 (NTSC)", "dv5p": "DVCPRO50 (PAL)",
+            "mp4v": "MPEG-4 Video", "mp2v": "MPEG-2 Video", "jpeg": "Motion JPEG", "mjpa": "Motion JPEG A", "mjpb": "Motion JPEG B",
+            "2vuy": "Uncompressed 8-bit 4:2:2", "v210": "Uncompressed 10-bit 4:2:2", "av01": "AV1", "vp09": "VP9",
+            "aac ": "AAC", "lpcm": "Linear PCM", "sowt": "Linear PCM", "twos": "Linear PCM", "in24": "Linear PCM",
+            "in32": "Linear PCM", "fl32": "Linear PCM", ".mp3": "MP3", "ac-3": "Dolby Digital (AC-3)",
+            "ec-3": "Dolby Digital Plus", "alac": "Apple Lossless", "opus": "Opus", "flac": "FLAC",
+        ]
+        let bytes = [24, 16, 8, 0].map { UInt8((code >> $0) & 0xFF) }
+        let fourCC = String(bytes: bytes, encoding: .macOSRoman) ?? "?"
+        return names[fourCC] ?? fourCC.trimmingCharacters(in: .whitespaces).uppercased()
+    }
+
+    private static func pixelAspectRatio(_ format: CMFormatDescription) -> CGSize? {
+        guard let ratio = CMFormatDescriptionGetExtension(format, extensionKey: kCMFormatDescriptionExtension_PixelAspectRatio) as? [String: NSNumber],
+              let h = ratio[kCMFormatDescriptionKey_PixelAspectRatioHorizontalSpacing as String],
+              let v = ratio[kCMFormatDescriptionKey_PixelAspectRatioVerticalSpacing as String] else { return nil }
+        return CGSize(width: h.doubleValue, height: v.doubleValue)
+    }
+
+    private static func colorSpaceName(_ format: CMFormatDescription) -> String? {
+        guard let primaries = CMFormatDescriptionGetExtension(format, extensionKey: kCMFormatDescriptionExtension_ColorPrimaries) as? String else { return nil }
+        let names = [
+            kCMFormatDescriptionColorPrimaries_ITU_R_709_2 as String: "Rec. 709",
+            kCMFormatDescriptionColorPrimaries_SMPTE_C as String: "SMPTE-C (NTSC)",
+            kCMFormatDescriptionColorPrimaries_EBU_3213 as String: "EBU 3213 (PAL)",
+            kCMFormatDescriptionColorPrimaries_ITU_R_2020 as String: "Rec. 2020",
+            kCMFormatDescriptionColorPrimaries_DCI_P3 as String: "DCI-P3",
+            kCMFormatDescriptionColorPrimaries_P3_D65 as String: "Display P3",
+        ]
+        var name = names[primaries] ?? primaries
+        if let transfer = CMFormatDescriptionGetExtension(format, extensionKey: kCMFormatDescriptionExtension_TransferFunction) as? String {
+            if transfer == kCMFormatDescriptionTransferFunction_ITU_R_2100_HLG as String { name += " HLG" }
+            if transfer == kCMFormatDescriptionTransferFunction_SMPTE_ST_2084_PQ as String { name += " PQ" }
+        }
+        return name
     }
 
     private static func thumbnails(for asset: AVURLAsset, duration: Double) async -> [Clip.Thumbnail] {

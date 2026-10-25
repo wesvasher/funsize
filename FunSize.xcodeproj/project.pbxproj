@@ -23,6 +23,7 @@
 		9D3D28EE07F5737FB7604092 /* PlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9166EF3510B260CAA486983A /* PlayerView.swift */; };
 		A260224BF4FA233E101EB31D /* ExportToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D33E36EAC0683EB9A11F58C /* ExportToolbar.swift */; };
 		B3560DB5809D2413A6EC5204 /* ClipPlayerController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EC7518137FCBF656A3159D6 /* ClipPlayerController.swift */; };
+		BCE132D50B25772745457397 /* ClipInspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A05B9E294378093DEE90249 /* ClipInspectorView.swift */; };
 		DD485EBBC391164A3F98A6BD /* FrameClock.swift in Sources */ = {isa = PBXBuildFile; fileRef = C68CC0E4CF9DA8193CE595A7 /* FrameClock.swift */; };
 		E6C74FD7DAD27D8E8B56B794 /* ExportFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BB23B5AB67E265BCED52AF1 /* ExportFormat.swift */; };
 		E6E2CD0D93946BACFEF35F4F /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE625BBFB11AECFAC072A9C5 /* SidebarView.swift */; };
@@ -52,6 +53,7 @@
 		55C1854074C9685942B9FCDA /* FunSizeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FunSizeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		58695AD125524C438F965970 /* ProjectStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectStore.swift; sourceTree = "<group>"; };
 		728F9B0D9225E79BC57A72F9 /* TimelineEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineEditorView.swift; sourceTree = "<group>"; };
+		7A05B9E294378093DEE90249 /* ClipInspectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipInspectorView.swift; sourceTree = "<group>"; };
 		7EC7518137FCBF656A3159D6 /* ClipPlayerController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipPlayerController.swift; sourceTree = "<group>"; };
 		8B885416B094F73E88EC9B56 /* FunSize.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FunSize.entitlements; sourceTree = "<group>"; };
 		9166EF3510B260CAA486983A /* PlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerView.swift; sourceTree = "<group>"; };
@@ -85,6 +87,7 @@
 			isa = PBXGroup;
 			children = (
 				CB4DD8807247B8B5A52F3CDB /* ClipDetailView.swift */,
+				7A05B9E294378093DEE90249 /* ClipInspectorView.swift */,
 				414974BBC0C760255B1E455C /* ContentView.swift */,
 				2D33E36EAC0683EB9A11F58C /* ExportToolbar.swift */,
 				9166EF3510B260CAA486983A /* PlayerView.swift */,
@@ -237,6 +240,7 @@
 			files = (
 				4211809B12D78D91A0146CA3 /* Clip.swift in Sources */,
 				8B6AA344B0CB5AEE84CAB8FA /* ClipDetailView.swift in Sources */,
+				BCE132D50B25772745457397 /* ClipInspectorView.swift in Sources */,
 				B3560DB5809D2413A6EC5204 /* ClipPlayerController.swift in Sources */,
 				05C443DCAED5110432A9496C /* CompositionBuilder.swift in Sources */,
 				77FEAC945596F29AA6530CED /* ContentView.swift in Sources */,

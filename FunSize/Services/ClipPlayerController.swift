@@ -9,6 +9,16 @@ final class ClipPlayerController {
     var currentTime: Double = 0
     private(set) var isPlaying = false
 
+    /// Playback speed as a multiple of normal (1 = 100%). Separate from the clip's frame rate.
+    var playbackSpeed: Float = 1 {
+        didSet {
+            player.defaultRate = playbackSpeed
+            if isPlaying { player.rate = playbackSpeed }
+        }
+    }
+
+    static let playbackSpeeds: [Float] = [0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4]
+
     @ObservationIgnored private var timeObserver: Any?
     @ObservationIgnored private var endObserver: NSObjectProtocol?
 
@@ -79,7 +89,7 @@ final class ClipPlayerController {
         if currentTime >= duration - clock.seconds(ofFrame: 1) {
             seek(to: clip?.inPoint ?? 0)
         }
-        player.play()
+        player.playImmediately(atRate: playbackSpeed)
         isPlaying = true
     }
 
