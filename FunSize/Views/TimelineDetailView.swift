@@ -41,7 +41,7 @@ private struct TimelinePreview: View {
                     description: Text("Drag clips from the sidebar or Finder into the timeline below.")
                 )
             } else {
-                VideoPlayer(player: player)
+                PlayerView(player: player)
                     .background(.black)
                 if let buildError {
                     ContentUnavailableView("Can't Preview", systemImage: "exclamationmark.triangle", description: Text(buildError))

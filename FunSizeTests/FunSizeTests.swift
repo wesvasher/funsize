@@ -133,3 +133,24 @@ enum TestVideo {
         return url
     }
 }
+
+import SwiftUI
+
+/// Draws the player screens offscreen. SwiftUI's VideoPlayer crashed here on macOS 27.
+struct PlayerViewTests {
+    @Test func clipAndTimelineScreensRender() async throws {
+        let dir = try TestVideo.tempDirectory()
+        let url = try await TestVideo.make(in: dir, name: "clip", seconds: 1, size: CGSize(width: 640, height: 360))
+        let store = ProjectStore(exporter: ExportManager())
+        let clip = try #require(store.importFiles([url]).first)
+        store.addToTimeline([clip])
+
+        for screen in [AnyView(ClipDetailView(clip: clip)), AnyView(TimelineDetailView())] {
+            let host = NSHostingView(rootView: screen.environment(store).environment(store.exporter))
+            host.frame = CGRect(x: 0, y: 0, width: 900, height: 600)
+            host.layoutSubtreeIfNeeded()
+            host.display()
+        }
+        try await Task.sleep(for: .milliseconds(300))
+    }
+}

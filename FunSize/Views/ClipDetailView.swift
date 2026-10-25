@@ -8,7 +8,7 @@ struct ClipDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VideoPlayer(player: player)
+            PlayerView(player: player)
                 .background(.black)
 
             Divider()
