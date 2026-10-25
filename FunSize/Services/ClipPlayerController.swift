@@ -7,6 +7,9 @@ import VideoToolbox
 final class ClipPlayerController {
     let player = AVPlayer()
     private(set) var clip: Clip?
+    /// The subclip being viewed. Its range is what In and Out edit; otherwise they edit the
+    /// source video's marks.
+    private(set) var subclip: Subclip?
     var currentTime: Double = 0
     private(set) var isPlaying = false
 
@@ -58,8 +61,16 @@ final class ClipPlayerController {
     /// Bumped on every switch so an older switch can't remove a newer one's still frame.
     @ObservationIgnored private var switchCount = 0
 
-    func load(_ clip: Clip) {
-        guard clip.id != self.clip?.id else { return }
+    /// Shows a source video, or one of its subclips (starting at the subclip's in point).
+    func load(_ clip: Clip, subclip: Subclip? = nil) {
+        if clip.id == self.clip?.id {
+            guard subclip?.id != self.subclip?.id else { return }
+            self.subclip = subclip
+            pause()
+            seek(to: subclip?.start ?? 0)
+            return
+        }
+        self.subclip = subclip
         self.clip = clip
         pause()
         let item = AVPlayerItem(url: clip.url)
@@ -73,6 +84,7 @@ final class ClipPlayerController {
         install(item)
         appliedSettings = EnhanceSettings()
         currentTime = 0
+        if let subclip { seek(to: subclip.start) }
     }
 
     /// Rebuilds the preview so it shows the clip's current effects (deinterlace, noise, upscale, sharpen).
@@ -218,7 +230,7 @@ final class ClipPlayerController {
         guard clip != nil else { return }
         // Start over if we're sitting on the last frame.
         if currentTime >= duration - clock.seconds(ofFrame: 1) {
-            seek(to: clip?.inPoint ?? 0)
+            seek(to: inPoint ?? 0)
         }
         player.playImmediately(atRate: playbackSpeed)
         isPlaying = true
@@ -246,57 +258,83 @@ final class ClipPlayerController {
 
     // MARK: In and out
 
+    /// In point being edited: the subclip's start, or the source video's mark.
+    var inPoint: Double? {
+        get { subclip.map(\.start) ?? clip?.inPoint }
+        set {
+            if let subclip { subclip.start = newValue ?? 0 } else { clip?.inPoint = newValue }
+        }
+    }
+
+    /// Out point being edited. A subclip's is never `nil` here (it ends at the end of the source).
+    var outPoint: Double? {
+        get { subclip.map { min($0.end ?? duration, duration) } ?? clip?.outPoint }
+        set {
+            if let subclip { subclip.end = newValue } else { clip?.outPoint = newValue }
+        }
+    }
+
+    /// A subclip always has a range; a source video only once something is marked.
+    var hasMarks: Bool { subclip != nil || inPoint != nil || outPoint != nil }
+
+    var markedRange: ClosedRange<Double> {
+        let start = inPoint ?? 0
+        return start...max(start, outPoint ?? duration)
+    }
+
     /// Marks the frame on screen as the first frame of the range.
     func markIn() {
-        guard let clip else { return }
+        guard clip != nil else { return }
         let time = clock.seconds(ofFrame: clock.frameIndex(at: currentTime))
-        clip.inPoint = time
-        if let out = clip.outPoint, out <= time { clip.outPoint = nil }
+        if let out = outPoint, out <= time { outPoint = nil }
+        inPoint = time
     }
 
     /// Marks the frame on screen as the last frame of the range.
     func markOut() {
-        guard let clip else { return }
+        guard clip != nil else { return }
         let time = min(duration, clock.seconds(ofFrame: clock.frameIndex(at: currentTime) + 1))
-        clip.outPoint = time
-        if let inPoint = clip.inPoint, inPoint >= time { clip.inPoint = nil }
+        if let inPoint, inPoint >= time { self.inPoint = nil }
+        outPoint = time
     }
 
     /// Moves the in point to the frame boundary nearest `seconds` and shows that frame.
     func dragIn(to seconds: Double) {
-        guard let clip else { return }
-        let outBoundary = Int(((clip.outPoint ?? duration) * clock.fps).rounded())
+        guard clip != nil else { return }
+        let outBoundary = Int(((outPoint ?? duration) * clock.fps).rounded())
         let boundary = min(max(0, Int((seconds * clock.fps).rounded())), max(0, outBoundary - 1))
-        clip.inPoint = clock.seconds(ofFrame: boundary)
+        inPoint = clock.seconds(ofFrame: boundary)
         pause()
         seek(to: clock.seconds(ofFrame: boundary))
     }
 
     /// Moves the out point to the frame boundary nearest `seconds` and shows the last included frame.
     func dragOut(to seconds: Double) {
-        guard let clip else { return }
-        let inBoundary = Int(((clip.inPoint ?? 0) * clock.fps).rounded())
+        guard clip != nil else { return }
+        let inBoundary = Int(((inPoint ?? 0) * clock.fps).rounded())
         let boundary = min(max(inBoundary + 1, Int((seconds * clock.fps).rounded())), frameCount)
-        clip.outPoint = min(duration, clock.seconds(ofFrame: boundary))
+        outPoint = min(duration, clock.seconds(ofFrame: boundary))
         pause()
         seek(to: clock.seconds(ofFrame: boundary - 1))
     }
 
+    /// Clears a source video's marks. A subclip keeps its range.
     func clearInOut() {
+        guard subclip == nil else { return }
         clip?.inPoint = nil
         clip?.outPoint = nil
     }
 
     func goToIn() {
         pause()
-        seek(to: clip?.inPoint ?? 0)
+        seek(to: inPoint ?? 0)
     }
 
     func goToOut() {
         pause()
-        guard let clip else { return }
+        guard clip != nil else { return }
         // Land on the last marked frame, not the frame after it.
-        let end = clip.outPoint ?? duration
+        let end = outPoint ?? duration
         seek(to: clock.seconds(ofFrame: max(0, clock.frameIndex(at: end) - 1)))
     }
 }

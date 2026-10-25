@@ -3,6 +3,8 @@ import SwiftUI
 struct SidebarView: View {
     @Environment(ProjectStore.self) private var store
     @State private var isTargeted = false
+    /// Source videos whose subclips are hidden. New subclips show right away.
+    @State private var collapsed: Set<UUID> = []
 
     var body: some View {
         @Bindable var store = store
@@ -14,21 +16,32 @@ struct SidebarView: View {
                     .tag(SidebarItem.timeline)
             }
 
-            Section("Media") {
+            Section("Source Videos") {
                 ForEach(store.clips) { clip in
-                    ClipRow(clip: clip)
-                        .tag(SidebarItem.clip(clip.id))
-                        .draggable(clip.url) {
-                            ClipRow(clip: clip).padding(6).frame(width: 240)
+                    let subclips = store.subclips(of: clip.id)
+                    if subclips.isEmpty {
+                        sourceRow(clip)
+                    } else {
+                        DisclosureGroup(isExpanded: expanded(clip.id)) {
+                            ForEach(subclips) { subclip in
+                                SubclipRow(subclip: subclip, clip: clip)
+                                    .tag(SidebarItem.subclip(subclip.id))
+                                    .draggable(subclip.dragURL) {
+                                        SubclipRow(subclip: subclip, clip: clip).padding(6).frame(width: 240)
+                                    }
+                            }
+                        } label: {
+                            sourceRow(clip)
                         }
+                    }
                 }
             }
         }
         .contextMenu(forSelectionType: SidebarItem.self) { items in
-            contextMenu(for: clips(in: items))
+            contextMenu(for: media(in: items))
         }
         .onDeleteCommand {
-            store.removeClips(Set(store.selectedClips.map(\.id)))
+            store.removeSelectedMedia()
         }
         .dropDestination(for: URL.self) { urls, _ in
             store.importAndSelect(urls)
@@ -58,33 +71,98 @@ struct SidebarView: View {
         }
     }
 
-    private func clips(in items: Set<SidebarItem>) -> [Clip] {
-        store.clips.filter { items.contains(.clip($0.id)) }
+    private func sourceRow(_ clip: Clip) -> some View {
+        ClipRow(clip: clip, subclipCount: store.subclips(of: clip.id).count)
+            .tag(SidebarItem.clip(clip.id))
+            .draggable(clip.url) {
+                ClipRow(clip: clip).padding(6).frame(width: 240)
+            }
+    }
+
+    private func expanded(_ id: UUID) -> Binding<Bool> {
+        Binding(
+            get: { !collapsed.contains(id) },
+            set: { if $0 { collapsed.remove(id) } else { collapsed.insert(id) } }
+        )
+    }
+
+    /// The source videos and subclips among `items`, in sidebar order.
+    private func media(in items: Set<SidebarItem>) -> [SidebarItem] {
+        store.clips.flatMap { clip in
+            [SidebarItem.clip(clip.id)] + store.subclips(of: clip.id).map { .subclip($0.id) }
+        }
+        .filter(items.contains)
     }
 
     @ViewBuilder
-    private func contextMenu(for clips: [Clip]) -> some View {
-        if !clips.isEmpty {
+    private func contextMenu(for media: [SidebarItem]) -> some View {
+        if !media.isEmpty {
+            let clips = media.compactMap { if case .clip(let id) = $0 { store.clip(for: id) } else { nil } }
+            let subclips = media.compactMap { if case .subclip(let id) = $0 { store.subclip(for: id) } else { nil } }
+
             Button("Add to Timeline", systemImage: "plus.rectangle.on.rectangle") {
-                store.addToTimeline(clips)
+                store.addToTimeline(media)
             }
             Menu("Export As") {
-                ExportPresetMenuItems { preset in store.exportClips(clips, as: preset) }
+                ExportPresetMenuItems { preset in store.exportMedia(media, as: preset) }
             }
             Divider()
+            if subclips.count == 1, clips.isEmpty, let subclip = subclips.first {
+                Button("Show Source Video", systemImage: "film") {
+                    collapsed.remove(subclip.sourceID)
+                    store.selection = [.clip(subclip.sourceID)]
+                }
+            }
             Button("Show in Finder", systemImage: "folder") {
-                NSWorkspace.shared.activateFileViewerSelecting(clips.map(\.url))
+                let urls = clips.map(\.url) + subclips.compactMap { store.clip(for: $0.sourceID)?.url }
+                NSWorkspace.shared.activateFileViewerSelecting(Array(Set(urls)))
             }
             Divider()
-            Button("Remove", systemImage: "trash", role: .destructive) {
+            Button(removeTitle(clips: clips.count, subclips: subclips.count), systemImage: "trash", role: .destructive) {
+                store.removeSubclips(Set(subclips.map(\.id)))
                 store.removeClips(Set(clips.map(\.id)))
             }
         }
     }
+
+    private func removeTitle(clips: Int, subclips: Int) -> String {
+        if clips == 0 { return subclips == 1 ? "Delete Subclip" : "Delete \(subclips) Subclips" }
+        return "Remove from Project"
+    }
 }
 
+/// A subclip under its source video: picture at its in point, name, length and range.
+struct SubclipRow: View {
+    let subclip: Subclip
+    let clip: Clip
+
+    var body: some View {
+        let range = subclip.range(in: clip.duration)
+        HStack(spacing: 10) {
+            ClipThumbnail(clip: clip, time: range.lowerBound)
+                .frame(width: 48, height: 27)
+                .clipShape(RoundedRectangle(cornerRadius: 3))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(subclip.name)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Label("\((range.upperBound - range.lowerBound).timecode) · \(range.lowerBound.preciseTimecode)–\(range.upperBound.preciseTimecode)",
+                      systemImage: "scissors")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.vertical, 1)
+        .help("Subclip of \(clip.name)")
+    }
+}
+
+/// A source video: picture, name, and its details or marked range.
 struct ClipRow: View {
     let clip: Clip
+    var subclipCount = 0
 
     var body: some View {
         HStack(spacing: 10) {
@@ -101,6 +179,8 @@ struct ClipRow: View {
                         Label(error, systemImage: "exclamationmark.triangle")
                     } else if clip.isLoaded && clip.hasMarks {
                         Label("Marked \((clip.markedRange.upperBound - clip.markedRange.lowerBound).timecode) of \(clip.duration.timecode)", systemImage: "scissors")
+                    } else if clip.isLoaded && subclipCount > 0 {
+                        Text("\(clip.summary) · \(subclipCount) subclip\(subclipCount == 1 ? "" : "s")")
                     } else if clip.isLoaded {
                         Text(clip.summary)
                     } else {

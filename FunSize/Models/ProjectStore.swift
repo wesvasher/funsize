@@ -2,12 +2,15 @@ import AppKit
 import AVFoundation
 import Observation
 
-/// Everything in the current session: imported media, the timeline, and selection.
+/// Everything in the current session: source videos, subclips, the timeline, and selection.
 @Observable
 final class ProjectStore {
     let exporter: ExportManager
 
+    /// Source videos, in sidebar order.
     var clips: [Clip] = []
+    /// Parts of source videos. Shown under their source in the sidebar.
+    var subclips: [Subclip] = []
     var timeline: [TimelineItem] = []
     var selection: Set<SidebarItem> = []
     var selectedTimelineItemID: UUID?
@@ -23,8 +26,44 @@ final class ProjectStore {
         clips.first { $0.id == id }
     }
 
+    func subclip(for id: UUID) -> Subclip? {
+        subclips.first { $0.id == id }
+    }
+
+    /// A source video's subclips, in the order they were made.
+    func subclips(of clipID: UUID) -> [Subclip] {
+        subclips.filter { $0.sourceID == clipID }
+    }
+
+    /// Selected source videos.
     var selectedClips: [Clip] {
         clips.filter { selection.contains(.clip($0.id)) }
+    }
+
+    var selectedSubclips: [Subclip] {
+        subclips.filter { selection.contains(.subclip($0.id)) }
+    }
+
+    /// Selected source videos and subclips, in sidebar order.
+    var selectedMedia: [SidebarItem] {
+        clips.flatMap { clip in
+            [SidebarItem.clip(clip.id)] + subclips(of: clip.id).map { .subclip($0.id) }
+        }
+        .filter(selection.contains)
+    }
+
+    /// When one source video or subclip is selected: the source, and the subclip if it's one.
+    var singleSelectedMedia: (clip: Clip, subclip: Subclip?)? {
+        guard selection.count == 1, let item = selection.first else { return nil }
+        switch item {
+        case .clip(let id):
+            return clip(for: id).map { ($0, nil) }
+        case .subclip(let id):
+            guard let subclip = subclip(for: id), let clip = clip(for: subclip.sourceID) else { return nil }
+            return (clip, subclip)
+        case .timeline:
+            return nil
+        }
     }
 
     var isTimelineSelected: Bool { selection == [.timeline] }
@@ -33,10 +72,23 @@ final class ProjectStore {
         timeline.first { $0.id == selectedTimelineItemID }
     }
 
+    /// The part of the source video a timeline item plays.
     func trimRange(of item: TimelineItem) -> ClosedRange<Double> {
         let duration = clip(for: item.clipID)?.duration ?? 0
-        let end = min(item.trimEnd ?? duration, duration)
-        return min(item.trimStart, end)...end
+        if let id = item.subclipID, let subclip = subclip(for: id) {
+            return subclip.range(in: duration)
+        }
+        return 0...duration
+    }
+
+    /// The subclip's name, or the source video's for a whole source.
+    func name(of item: TimelineItem) -> String {
+        if let id = item.subclipID, let subclip = subclip(for: id) { return subclip.name }
+        return clip(for: item.clipID)?.name ?? ""
+    }
+
+    func range(of subclip: Subclip) -> ClosedRange<Double> {
+        subclip.range(in: clip(for: subclip.sourceID)?.duration ?? 0)
     }
 
     func duration(of item: TimelineItem) -> Double {
@@ -92,13 +144,75 @@ final class ProjectStore {
         selection = Set(imported.map { .clip($0.id) })
     }
 
+    /// Removes source videos, with their subclips and timeline items. The files aren't touched.
     func removeClips(_ ids: Set<UUID>) {
+        let subclipIDs = Set(subclips.filter { ids.contains($0.sourceID) }.map(\.id))
         clips.removeAll { ids.contains($0.id) }
+        subclips.removeAll { subclipIDs.contains($0.id) }
         timeline.removeAll { ids.contains($0.clipID) }
-        selection = selection.filter {
-            if case .clip(let id) = $0 { return !ids.contains(id) }
-            return true
+        pruneSelection()
+    }
+
+    /// Removes subclips, and the timeline items that use them.
+    func removeSubclips(_ ids: Set<UUID>) {
+        subclips.removeAll { ids.contains($0.id) }
+        timeline.removeAll { $0.subclipID.map(ids.contains) ?? false }
+        pruneSelection()
+    }
+
+    /// Removes whatever is selected in the sidebar's media list.
+    func removeSelectedMedia() {
+        let selected = selectedMedia
+        removeSubclips(Set(selected.compactMap { if case .subclip(let id) = $0 { id } else { nil } }))
+        removeClips(Set(selected.compactMap { if case .clip(let id) = $0 { id } else { nil } }))
+    }
+
+    private func pruneSelection() {
+        let clipIDs = Set(clips.map(\.id)), subclipIDs = Set(subclips.map(\.id))
+        let kept = selection.filter {
+            switch $0 {
+            case .clip(let id): clipIDs.contains(id)
+            case .subclip(let id): subclipIDs.contains(id)
+            case .timeline: true
+            }
         }
+        if kept != selection { selection = kept }
+        if let selected = selectedTimelineItemID, !timeline.contains(where: { $0.id == selected }) {
+            selectedTimelineItemID = nil
+        }
+    }
+
+    // MARK: Subclips
+
+    /// Makes a subclip from a source video's marked range, adds it to the end of the
+    /// timeline, and clears the marks so the next range can be marked.
+    @discardableResult
+    func addSubclip(from clip: Clip) -> Subclip? {
+        guard clip.hasMarks else { return nil }
+        let range = clip.markedRange
+        let subclip = makeSubclip(of: clip, start: range.lowerBound, end: clip.outPoint.map { _ in range.upperBound })
+        clip.inPoint = nil
+        clip.outPoint = nil
+        addToTimeline([.subclip(subclip.id)])
+        return subclip
+    }
+
+    private func makeSubclip(of clip: Clip, start: Double, end: Double?, after: Subclip? = nil) -> Subclip {
+        let subclip = Subclip(sourceID: clip.id, name: nextSubclipName(for: clip), start: start, end: end)
+        if let after, let index = subclips.firstIndex(where: { $0.id == after.id }) {
+            subclips.insert(subclip, at: index + 1)
+        } else {
+            subclips.append(subclip)
+        }
+        return subclip
+    }
+
+    /// "IMG_0021 Subclip 3": the next number not already used for this source video.
+    func nextSubclipName(for clip: Clip) -> String {
+        let names = Set(subclips.map(\.name))
+        var number = subclips(of: clip.id).count + 1
+        while names.contains("\(clip.name) Subclip \(number)") { number += 1 }
+        return "\(clip.name) Subclip \(number)"
     }
 
     // MARK: Saving and opening
@@ -107,7 +221,8 @@ final class ProjectStore {
     var projectFile: ProjectFile {
         ProjectFile(
             clips: clips.map(\.record),
-            timeline: timeline.map { .init(id: $0.id, clipID: $0.clipID, trimStart: $0.trimStart, trimEnd: $0.trimEnd) }
+            subclips: subclips.map(\.record),
+            timeline: timeline.map { .init(id: $0.id, clipID: $0.clipID, subclipID: $0.subclipID) }
         )
     }
 
@@ -123,20 +238,19 @@ final class ProjectStore {
         }
         if updated.map(\.id) != clips.map(\.id) { clips = updated }
 
-        let items = file.timeline.map {
-            TimelineItem(id: $0.id, clipID: $0.clipID, trimStart: $0.trimStart, trimEnd: $0.trimEnd)
+        let existingSubclips = Dictionary(subclips.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let updatedSubclips = file.subclips.map { record in
+            let subclip = existingSubclips[record.id]
+                ?? Subclip(id: record.id, sourceID: record.sourceID, name: record.name, start: record.start, end: record.end)
+            subclip.apply(record)
+            return subclip
         }
+        if updatedSubclips.map(\.id) != subclips.map(\.id) { subclips = updatedSubclips }
+
+        let items = file.timeline.map { TimelineItem(id: $0.id, clipID: $0.clipID, subclipID: $0.subclipID) }
         if items != timeline { timeline = items }
 
-        let ids = Set(clips.map(\.id))
-        let kept = selection.filter {
-            if case .clip(let id) = $0 { return ids.contains(id) }
-            return true
-        }
-        if kept != selection { selection = kept }
-        if let selected = selectedTimelineItemID, !timeline.contains(where: { $0.id == selected }) {
-            selectedTimelineItemID = nil
-        }
+        pruneSelection()
     }
 
     /// Selects something sensible after opening a project.
@@ -169,8 +283,24 @@ final class ProjectStore {
 
     // MARK: Timeline editing
 
+    /// Adds whole source videos.
     func addToTimeline(_ clips: [Clip], at index: Int? = nil) {
-        let items = clips.map { TimelineItem(clipID: $0.id, trimStart: $0.inPoint ?? 0, trimEnd: $0.outPoint) }
+        addToTimeline(clips.map { .clip($0.id) }, at: index)
+    }
+
+    /// Adds source videos (whole) and subclips, in the given order.
+    func addToTimeline(_ media: [SidebarItem], at index: Int? = nil) {
+        let items: [TimelineItem] = media.compactMap { entry in
+            switch entry {
+            case .clip(let id):
+                return clip(for: id).map { TimelineItem(clipID: $0.id) }
+            case .subclip(let id):
+                return subclip(for: id).map { TimelineItem(clipID: $0.sourceID, subclipID: $0.id) }
+            case .timeline:
+                return nil
+            }
+        }
+        guard !items.isEmpty else { return }
         let insertAt = min(index ?? timeline.count, timeline.count)
         timeline.insert(contentsOf: items, at: insertAt)
         selectedTimelineItemID = items.last?.id
@@ -187,7 +317,8 @@ final class ProjectStore {
     func duplicateTimelineItem(_ id: UUID) {
         guard let index = timeline.firstIndex(where: { $0.id == id }) else { return }
         let original = timeline[index]
-        let copy = TimelineItem(clipID: original.clipID, trimStart: original.trimStart, trimEnd: original.trimEnd)
+        // Shares the subclip until one of them is trimmed.
+        let copy = TimelineItem(clipID: original.clipID, subclipID: original.subclipID)
         timeline.insert(copy, at: index + 1)
         selectedTimelineItemID = copy.id
     }
@@ -200,29 +331,51 @@ final class ProjectStore {
     /// Minimum length a trimmed clip can have.
     static let minimumClipLength = 0.1
 
+    /// Trimming changes the item's subclip. A whole source video becomes a new subclip first,
+    /// and a subclip used elsewhere on the timeline is copied so only this item changes.
     func setTrimStart(_ value: Double, for id: UUID) {
-        guard let index = timeline.firstIndex(where: { $0.id == id }) else { return }
-        let end = trimRange(of: timeline[index]).upperBound
-        timeline[index].trimStart = min(max(0, value), end - Self.minimumClipLength)
+        guard let subclip = trimmableSubclip(for: id) else { return }
+        let end = range(of: subclip).upperBound
+        subclip.start = min(max(0, value), end - Self.minimumClipLength)
     }
 
     func setTrimEnd(_ value: Double, for id: UUID) {
-        guard let index = timeline.firstIndex(where: { $0.id == id }),
-              let clip = clip(for: timeline[index].clipID) else { return }
-        let start = timeline[index].trimStart
-        timeline[index].trimEnd = max(min(value, clip.duration), start + Self.minimumClipLength)
+        guard let subclip = trimmableSubclip(for: id), let clip = clip(for: subclip.sourceID) else { return }
+        subclip.end = max(min(value, clip.duration), subclip.start + Self.minimumClipLength)
     }
 
+    /// Plays the whole source video again. The subclip stays in the sidebar.
     func resetTrim(for id: UUID) {
         guard let index = timeline.firstIndex(where: { $0.id == id }) else { return }
-        timeline[index].trimStart = 0
-        timeline[index].trimEnd = nil
+        timeline[index].subclipID = nil
+    }
+
+    /// The subclip that trimming this timeline item should change.
+    private func trimmableSubclip(for itemID: UUID) -> Subclip? {
+        guard let index = timeline.firstIndex(where: { $0.id == itemID }),
+              let clip = clip(for: timeline[index].clipID) else { return nil }
+        let item = timeline[index]
+        if let id = item.subclipID, let subclip = subclip(for: id) {
+            let isShared = timeline.contains { $0.id != itemID && $0.subclipID == id }
+            guard isShared else { return subclip }
+            let copy = makeSubclip(of: clip, start: subclip.start, end: subclip.end, after: subclip)
+            timeline[index].subclipID = copy.id
+            return copy
+        }
+        let subclip = makeSubclip(of: clip, start: 0, end: nil)
+        timeline[index].subclipID = subclip.id
+        return subclip
     }
 
     /// Handles anything dropped on the timeline: new files, media-list rows, or reordered items.
     func handleTimelineDrop(_ urls: [URL], at index: Int) -> Bool {
         if let url = urls.first, let itemID = TimelineItem.id(fromDragURL: url) {
             moveTimelineItem(itemID, to: index)
+            return true
+        }
+        let dragged = urls.compactMap(Subclip.id(fromDragURL:))
+        if !dragged.isEmpty {
+            addToTimeline(dragged.map { .subclip($0) }, at: index)
             return true
         }
         let clips = importFiles(urls)
@@ -246,42 +399,63 @@ final class ProjectStore {
     }
 
     var canExport: Bool {
-        isTimelineSelected ? !timeline.isEmpty : !selectedClips.isEmpty
+        isTimelineSelected ? !timeline.isEmpty : !selectedMedia.isEmpty
     }
 
-    /// Exports whatever is selected: the timeline, or each selected clip.
+    /// Exports whatever is selected: the timeline, or each selected source video and subclip.
     func exportSelection(as preset: ExportPreset) {
         if isTimelineSelected {
             exportTimeline(as: preset)
         } else {
-            exportClips(selectedClips, as: preset)
+            exportMedia(selectedMedia, as: preset)
         }
     }
 
-    /// Exports each clip (or just its in/out range when one is marked).
+    /// Exports each source video (or just its in/out range when one is marked).
     func exportClips(_ clips: [Clip], as preset: ExportPreset) {
-        guard !clips.isEmpty else { return }
+        exportMedia(clips.map { .clip($0.id) }, as: preset)
+    }
+
+    /// Exports each source video and subclip as its own file.
+    func exportMedia(_ media: [SidebarItem], as preset: ExportPreset) {
+        guard !media.isEmpty else { return }
         Task {
             guard let folder = await exportFolder() else { return }
-            for clip in clips {
-                await exportClip(clip, as: preset, to: folder)
+            for entry in media {
+                switch entry {
+                case .clip(let id):
+                    if let clip = clip(for: id) { await exportClip(clip, as: preset, to: folder) }
+                case .subclip(let id):
+                    if let subclip = subclip(for: id), let clip = clip(for: subclip.sourceID) {
+                        await exportClip(clip, range: range(of: subclip), name: subclip.name, as: preset, to: folder)
+                    }
+                case .timeline:
+                    break
+                }
             }
         }
     }
 
     func exportClip(_ clip: Clip, as preset: ExportPreset, to folder: URL) async {
+        await exportClip(clip, range: clip.hasMarks ? clip.markedRange : nil, name: clip.name, as: preset, to: folder)
+    }
+
+    /// Exports part of a source video (`range`), or all of it when `range` is `nil`.
+    func exportClip(_ clip: Clip, range: ClosedRange<Double>?, name baseName: String,
+                    as preset: ExportPreset, to folder: URL) async {
         let settings = clip.enhanceSettings
         let enhanced = settings.isActive && !preset.isAudioOnly
-        let name = enhanced ? "\(clip.name) \(clip.exportNameSuffix)" : clip.name
+        let name = enhanced ? "\(baseName) \(clip.exportNameSuffix)" : baseName
         guard clip.isLoaded else {
             exporter.reportFailure(clip.loadError ?? "This clip is still loading. Try again in a moment.", name: name, preset: preset)
             return
         }
-        let range = clip.markedRange
+        let marked = range
+        let range = range ?? 0...clip.duration
         do {
             if enhanced {
                 let playable = try await Enhancer.makePlayable(url: clip.url, settings: settings)
-                let timeRange = clip.hasMarks
+                let timeRange = marked != nil
                     ? CMTimeRange(start: CMTime(seconds: range.lowerBound, preferredTimescale: 90_000),
                                   end: CMTime(seconds: range.upperBound, preferredTimescale: 90_000))
                     : nil

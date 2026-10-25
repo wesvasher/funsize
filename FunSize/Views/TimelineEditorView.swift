@@ -22,6 +22,8 @@ struct TimelineEditorView: View {
                         if let clip = store.clip(for: item.clipID) {
                             TimelineClipView(
                                 clip: clip,
+                                name: store.name(of: item),
+                                isSubclip: item.subclipID != nil,
                                 range: store.trimRange(of: item),
                                 isSelected: item.id == store.selectedTimelineItemID
                             )
@@ -96,7 +98,14 @@ struct TimelineEditorView: View {
     @ViewBuilder
     private func itemMenu(for item: TimelineItem) -> some View {
         Button("Duplicate", systemImage: "plus.square.on.square") { store.duplicateTimelineItem(item.id) }
-        Button("Reset Trim", systemImage: "arrow.uturn.backward") { store.resetTrim(for: item.id) }
+        if item.subclipID != nil {
+            Button("Use Whole Source Video", systemImage: "arrow.uturn.backward") { store.resetTrim(for: item.id) }
+            Button("Show Subclip", systemImage: "scissors") {
+                if let id = item.subclipID { store.selection = [.subclip(id)] }
+            }
+        } else {
+            Button("Show Source Video", systemImage: "film") { store.selection = [.clip(item.clipID)] }
+        }
         Divider()
         Button("Remove from Timeline", systemImage: "trash", role: .destructive) {
             store.removeTimelineItem(item.id)
@@ -121,6 +130,8 @@ struct TimelineEditorView: View {
 
 private struct TimelineClipView: View {
     let clip: Clip
+    let name: String
+    let isSubclip: Bool
     let range: ClosedRange<Double>
     let isSelected: Bool
 
@@ -144,7 +155,10 @@ private struct TimelineClipView: View {
                 }
 
                 HStack(spacing: 4) {
-                    Text(clip.name).lineLimit(1)
+                    if isSubclip {
+                        Image(systemName: "scissors").foregroundStyle(.secondary)
+                    }
+                    Text(name).lineLimit(1)
                     Text(length.timecode).foregroundStyle(.secondary).monospacedDigit()
                 }
                 .font(.caption)
@@ -160,6 +174,6 @@ private struct TimelineClipView: View {
                 .strokeBorder(isSelected ? Color.accentColor : Color.primary.opacity(0.15), lineWidth: isSelected ? 3 : 1)
         }
         .contentShape(Rectangle())
-        .help(clip.name)
+        .help(isSubclip ? "\(name) (subclip of \(clip.name))" : "\(clip.name) (whole source video)")
     }
 }

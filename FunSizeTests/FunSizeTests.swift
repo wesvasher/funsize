@@ -51,6 +51,10 @@ struct StoreTests {
         store.setTrimStart(2, for: first)
         store.setTrimEnd(6, for: first)
         #expect(store.timelineDuration == 9)
+        // Trimming a whole source video turned it into a subclip; the source is untouched.
+        #expect(store.subclips.count == 1)
+        #expect(store.timeline[1].subclipID == store.subclips[0].id)
+        #expect(!a.hasMarks)
 
         store.setTrimEnd(1, for: first) // can't end before the start
         #expect(store.trimRange(of: store.timeline[1]).upperBound > 2)
@@ -216,7 +220,7 @@ struct InOutTests {
         clip.inPoint = 1
         clip.outPoint = 2
 
-        store.addToTimeline([clip])
+        store.addSubclip(from: clip)
         #expect(store.timelineDuration == 1)
 
         let job = store.exporter.export(
@@ -800,6 +804,10 @@ struct ProjectFileTests {
 
         let store = ProjectStore(exporter: ExportManager.test())
         let clip = try #require(store.importFiles([url]).first)
+        clip.inPoint = 0.25
+        clip.outPoint = 1
+        store.addSubclip(from: clip)
+        store.subclips[0].name = "Best Part"
         clip.inPoint = 0.5
         clip.outPoint = 1.5
         clip.denoise = true
@@ -828,7 +836,9 @@ struct ProjectFileTests {
         #expect(copy.markedRange == 0.5...1.5)
         #expect(copy.denoise && copy.denoiseStrength == 0.8 && copy.sharpen == 0.3)
         #expect(copy.fieldOrderChoice == .topFirst && copy.showCaptions && copy.upscale == .fast)
-        #expect(reopened.timeline.first?.trimStart == 0.5)
+        #expect(reopened.subclips.map(\.name) == ["Best Part"])
+        #expect(reopened.subclips.first?.start == 0.25 && reopened.subclips.first?.end == 1)
+        #expect(reopened.timeline.map(\.subclipID) == [reopened.subclips[0].id, nil])
 
         // The video loads again from the saved project.
         for _ in 0..<100 where !copy.isLoaded { try await Task.sleep(for: .milliseconds(20)) }
@@ -967,5 +977,151 @@ extension ExportManager {
 extension ExportPreset {
     static func builtIn(_ name: String) -> ExportPreset {
         defaults.first { $0.name == name }!
+    }
+}
+
+struct SubclipTests {
+    private func makeStore() -> (ProjectStore, Clip) {
+        let store = ProjectStore(exporter: ExportManager.test())
+        let clip = Clip(url: URL(fileURLWithPath: "/tmp/source.mov"))
+        clip.duration = 10
+        store.clips = [clip]
+        return (store, clip)
+    }
+
+    @Test func addSubclipUsesMarksAndLeavesSourceAlone() {
+        let (store, clip) = makeStore()
+        #expect(store.addSubclip(from: clip) == nil)  // nothing marked
+
+        clip.inPoint = 2
+        clip.outPoint = 5
+        let first = try! #require(store.addSubclip(from: clip))
+        #expect(first.name == "source Subclip 1")
+        #expect(store.range(of: first) == 2...5)
+        #expect(!clip.hasMarks)  // cleared for the next one
+        #expect(store.timeline.map(\.subclipID) == [first.id])
+        #expect(store.timelineDuration == 3)
+
+        // Only an in point: the subclip runs to the end of the source.
+        clip.inPoint = 7
+        let second = try! #require(store.addSubclip(from: clip))
+        #expect(second.name == "source Subclip 2")
+        #expect(second.end == nil && store.range(of: second) == 7...10)
+        #expect(store.subclips(of: clip.id).count == 2)
+    }
+
+    @Test func wholeSourceOnTimelineBecomesSubclipWhenTrimmed() {
+        let (store, clip) = makeStore()
+        store.addToTimeline([clip])
+        let item = store.timeline[0]
+        #expect(item.subclipID == nil && store.duration(of: item) == 10)
+
+        store.setTrimEnd(4, for: item.id)
+        let subclip = try! #require(store.subclips.first)
+        #expect(store.timeline[0].subclipID == subclip.id)
+        #expect(store.trimRange(of: store.timeline[0]) == 0...4)
+
+        // Back to the whole source; the subclip stays in the sidebar.
+        store.resetTrim(for: item.id)
+        #expect(store.timeline[0].subclipID == nil && store.timelineDuration == 10)
+        #expect(store.subclips.count == 1)
+    }
+
+    @Test func trimmingASharedSubclipOnlyChangesThatItem() {
+        let (store, clip) = makeStore()
+        clip.inPoint = 1
+        clip.outPoint = 3
+        let subclip = try! #require(store.addSubclip(from: clip))
+        store.duplicateTimelineItem(store.timeline[0].id)
+        #expect(store.timeline.allSatisfy { $0.subclipID == subclip.id })
+
+        store.setTrimStart(2, for: store.timeline[1].id)
+        #expect(store.range(of: subclip) == 1...3)  // the first use is unchanged
+        #expect(store.trimRange(of: store.timeline[1]) == 2...3)
+        #expect(store.subclips.count == 2 && store.timeline[1].subclipID != subclip.id)
+
+        // A subclip used once is trimmed in place.
+        store.setTrimEnd(2.5, for: store.timeline[0].id)
+        #expect(store.range(of: subclip) == 1...2.5)
+        #expect(store.subclips.count == 2)
+    }
+
+    @Test func removingSubclipsAndSources() {
+        let (store, clip) = makeStore()
+        clip.inPoint = 1
+        clip.outPoint = 2
+        let subclip = try! #require(store.addSubclip(from: clip))
+        store.addToTimeline([clip])
+        store.selection = [.subclip(subclip.id)]
+
+        store.removeSubclips([subclip.id])
+        #expect(store.subclips.isEmpty)
+        #expect(store.timeline.count == 1 && store.timeline[0].subclipID == nil)  // the whole source stays
+        #expect(store.selection.isEmpty)
+
+        clip.inPoint = 1
+        store.addSubclip(from: clip)
+        store.removeClips([clip.id])
+        #expect(store.subclips.isEmpty && store.timeline.isEmpty)
+    }
+
+    @Test func selectionAndTimelineDrops() {
+        let (store, clip) = makeStore()
+        clip.inPoint = 1
+        let subclip = try! #require(store.addSubclip(from: clip))
+        store.selection = [.subclip(subclip.id)]
+        #expect(store.singleSelectedMedia?.clip === clip)
+        #expect(store.singleSelectedMedia?.subclip === subclip)
+
+        store.selection = [.clip(clip.id), .subclip(subclip.id)]
+        #expect(store.selectedMedia == [.clip(clip.id), .subclip(subclip.id)])
+        #expect(store.canExport)
+
+        #expect(store.handleTimelineDrop([subclip.dragURL], at: 0))
+        #expect(store.timeline.count == 2 && store.timeline[0].subclipID == subclip.id)
+    }
+
+    @Test func markingInASubclipChangesTheSubclipOnly() async throws {
+        let dir = try TestVideo.tempDirectory()
+        let url = try await TestVideo.make(in: dir, name: "clip", seconds: 2, size: CGSize(width: 320, height: 240))
+        let clip = Clip(url: url)
+        await MediaLoader.load(clip)
+        let subclip = Subclip(sourceID: clip.id, name: "Part", start: 0.5, end: 1.5)
+        let controller = ClipPlayerController()
+        controller.load(clip, subclip: subclip)
+        #expect(controller.currentTime == 0.5)
+        #expect(controller.hasMarks && controller.markedRange == 0.5...1.5)
+
+        controller.currentTime = 1.0
+        controller.markIn()
+        #expect(subclip.start == 1.0)
+        #expect(!clip.hasMarks)
+        controller.clearInOut()  // a subclip keeps its range
+        #expect(subclip.start == 1.0 && subclip.end == 1.5)
+
+        // Back to the source video: marks are the source's again.
+        controller.load(clip)
+        #expect(!controller.hasMarks)
+        controller.markIn()
+        #expect(clip.inPoint != nil && subclip.start == 1.0)
+    }
+
+    @Test func oldProjectTrimsBecomeSubclips() throws {
+        let clipID = UUID(), trimmed = UUID(), whole = UUID()
+        let json = """
+        {"version": 1,
+         "clips": [{"id": "\(clipID)", "path": "/tmp/Holiday.mov"}],
+         "timeline": [{"id": "\(trimmed)", "clipID": "\(clipID)", "trimStart": 1.5, "trimEnd": 4},
+                      {"id": "\(whole)", "clipID": "\(clipID)", "trimStart": 0}]}
+        """
+        let file = try JSONDecoder().decode(ProjectFile.self, from: Data(json.utf8))
+        #expect(file.subclips.count == 1)
+        let subclip = try #require(file.subclips.first)
+        #expect(subclip.name == "Holiday Subclip 1" && subclip.start == 1.5 && subclip.end == 4)
+        #expect(file.timeline.map(\.subclipID) == [subclip.id, nil])
+
+        // And it saves in the new form.
+        let reencoded = try JSONDecoder().decode(ProjectFile.self, from: JSONEncoder().encode(file))
+        #expect(reencoded == file)
     }
 }

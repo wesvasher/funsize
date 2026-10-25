@@ -417,4 +417,30 @@ struct HideSidebarsTests {
         }
         #expect(!store.sidebarsHidden)
     }
+
+    @Test func subclipScreensSettle() async throws {
+        let dir = try TestVideo.tempDirectory()
+        let url = try await TestVideo.make(in: dir, name: "clip", seconds: 2, size: CGSize(width: 640, height: 360))
+        let store = ProjectStore(exporter: ExportManager.test())
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1200, height: 760),
+                              styleMask: [.titled, .resizable, .closable], backing: .buffered, defer: false)
+        window.contentView = NSHostingView(rootView: ContentView().environment(store).environment(store.exporter))
+        window.orderFront(nil)
+        defer { window.orderOut(nil) }
+
+        let clip = try #require(store.importFiles([url]).first)
+        for _ in 0..<100 where !clip.isLoaded { try await Task.sleep(for: .milliseconds(20)) }
+        clip.inPoint = 0.5
+        clip.outPoint = 1.5
+        let subclip = try #require(store.addSubclip(from: clip))
+        for selection in [[SidebarItem.clip(clip.id)], [.subclip(subclip.id)], [.clip(clip.id), .subclip(subclip.id)], [.timeline]] {
+            store.selection = Set(selection)
+            for _ in 0..<8 {
+                try await Task.sleep(for: .milliseconds(40))
+                window.contentView?.layoutSubtreeIfNeeded()
+                window.displayIfNeeded()
+            }
+        }
+        #expect(store.subclips.count == 1)
+    }
 }

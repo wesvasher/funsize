@@ -1,7 +1,8 @@
 import AVFoundation
 import Observation
 
-/// A video (or audio) file the user dropped into the media list.
+/// A source video: a video (or audio) file the user imported, used as is.
+/// Its in and out marks are where the next subclip will come from.
 @Observable
 final class Clip: Identifiable {
     struct Thumbnail: Identifiable {
@@ -183,7 +184,7 @@ final class Clip: Identifiable {
 
     var hasMarks: Bool { inPoint != nil || outPoint != nil }
 
-    /// The part of the clip that exports and goes onto the timeline.
+    /// The marked part of the source video: what Add Subclip uses.
     var markedRange: ClosedRange<Double> {
         let start = inPoint ?? 0
         return start...max(start, outPoint ?? duration)
@@ -208,19 +209,63 @@ final class Clip: Identifiable {
     }
 }
 
-/// A clip placed on the timeline, with its own trim.
+/// A named part of a source video, made by marking in and out and choosing Add Subclip
+/// (or by trimming a whole source video on the timeline). The video file is never changed.
+/// Effects and color belong to the source video, so every subclip of it shares them.
+@Observable
+final class Subclip: Identifiable {
+    let id: UUID
+    let sourceID: UUID
+    var name: String
+    /// Range in the source video, in seconds. `end == nil` means the end of the source.
+    var start: Double
+    var end: Double?
+
+    init(id: UUID = UUID(), sourceID: UUID, name: String, start: Double, end: Double?) {
+        self.id = id
+        self.sourceID = sourceID
+        self.name = name
+        self.start = start
+        self.end = end
+    }
+
+    /// The range within a source video of `duration` seconds.
+    func range(in duration: Double) -> ClosedRange<Double> {
+        let upper = min(end ?? duration, duration)
+        return min(start, upper)...upper
+    }
+
+    var record: ProjectFile.SubclipRecord {
+        .init(id: id, sourceID: sourceID, name: name, start: start, end: end)
+    }
+
+    func apply(_ r: ProjectFile.SubclipRecord) {
+        if name != r.name { name = r.name }
+        if start != r.start { start = r.start }
+        if end != r.end { end = r.end }
+    }
+
+    /// URL used to drag this subclip from the sidebar onto the timeline.
+    var dragURL: URL { URL(string: "funsize-subclip://\(id.uuidString)")! }
+
+    static func id(fromDragURL url: URL) -> UUID? {
+        guard url.scheme == "funsize-subclip", let host = url.host() else { return nil }
+        return UUID(uuidString: host)
+    }
+}
+
+/// One spot on the timeline: a whole source video, or one of its subclips.
 struct TimelineItem: Identifiable, Hashable {
     let id: UUID
+    /// The source video.
     let clipID: UUID
-    var trimStart: Double
-    /// `nil` means "to the end of the clip".
-    var trimEnd: Double?
+    /// The subclip it plays, or `nil` for the whole source video.
+    var subclipID: UUID?
 
-    init(id: UUID = UUID(), clipID: UUID, trimStart: Double = 0, trimEnd: Double? = nil) {
+    init(id: UUID = UUID(), clipID: UUID, subclipID: UUID? = nil) {
         self.id = id
         self.clipID = clipID
-        self.trimStart = trimStart
-        self.trimEnd = trimEnd
+        self.subclipID = subclipID
     }
 
     /// URL used to drag this item around inside the timeline.
@@ -234,7 +279,9 @@ struct TimelineItem: Identifiable, Hashable {
 
 enum SidebarItem: Hashable {
     case timeline
+    /// A source video.
     case clip(UUID)
+    case subclip(UUID)
 }
 
 extension Double {

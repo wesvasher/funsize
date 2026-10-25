@@ -62,10 +62,11 @@ struct DetailView: View {
         Group {
             if store.isTimelineSelected {
                 TimelineDetailView()
-            } else if store.selectedClips.count == 1, let clip = store.selectedClips.first {
-                ClipDetailView(clip: clip)
-            } else if store.selectedClips.count > 1 {
-                MultipleClipsView(clips: store.selectedClips)
+            } else if let (clip, subclip) = store.singleSelectedMedia {
+                // One view for a source and its subclips, so switching between them keeps the player.
+                ClipDetailView(clip: clip, subclip: subclip)
+            } else if store.selectedMedia.count > 1 {
+                MultipleClipsView(media: store.selectedMedia)
             } else {
                 DropZoneView()
             }
@@ -78,11 +79,14 @@ struct DetailView: View {
         if store.isTimelineSelected {
             return "Timeline · \(store.timeline.count) clips · \(store.timelineDuration.timecode)"
         }
-        if store.selectedClips.count == 1 {
-            let clip = store.selectedClips[0]
+        if let (clip, subclip) = store.singleSelectedMedia {
+            if let subclip {
+                let range = subclip.range(in: clip.duration)
+                return "\(subclip.name) · Subclip of \(clip.name) · \((range.upperBound - range.lowerBound).timecode)"
+            }
             return "\(clip.name) · \(clip.summary)"
         }
-        if store.selectedClips.count > 1 { return "\(store.selectedClips.count) clips selected" }
+        if store.selectedMedia.count > 1 { return "\(store.selectedMedia.count) items selected" }
         return ""
     }
 }
@@ -117,16 +121,17 @@ struct DropZoneView: View {
 
 struct MultipleClipsView: View {
     @Environment(ProjectStore.self) private var store
-    let clips: [Clip]
+    /// Source videos and subclips.
+    let media: [SidebarItem]
 
     var body: some View {
         ContentUnavailableView {
-            Label("\(clips.count) Clips Selected", systemImage: "square.stack.3d.up")
+            Label("\(media.count) Items Selected", systemImage: "square.stack.3d.up")
         } description: {
-            Text("Export saves each clip separately. To join them into one video, add them to the timeline.")
+            Text("Export saves each one separately. To join them into one video, add them to the timeline.")
         } actions: {
             Button("Add to Timeline") {
-                store.addToTimeline(clips)
+                store.addToTimeline(media)
                 store.selection = [.timeline]
             }
         }

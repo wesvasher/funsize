@@ -1,11 +1,15 @@
 import SwiftUI
 
-/// Right-hand panel for a clip: file and format details, plus effects.
+/// Right-hand panel for a source video or subclip: file and format details, plus effects.
 /// Laid out compactly (like Finder's Get Info) so most clips fit without scrolling.
 struct ClipInspectorView: View {
+    /// The source video (for a subclip, the video it comes from).
     @Bindable var clip: Clip
+    var subclip: Subclip? = nil
     /// The clip's preview player, for "Show Original".
     var controller: ClipPlayerController?
+    /// Selects the source video of `subclip`.
+    var showSource: (() -> Void)? = nil
     @State private var presets = EffectsPresetStore.shared
     @State private var library = LUTLibrary.shared
     @Environment(\.openSettings) private var openSettings
@@ -15,7 +19,11 @@ struct ClipInspectorView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                InspectorSection("File") {
+                if let subclip {
+                    SubclipSection(subclip: subclip, clip: clip, clock: controller?.clock, showSource: showSource)
+                }
+
+                InspectorSection(subclip == nil ? "File" : "Source Video") {
                     InspectorRow("Name", clip.name)
                     InspectorRow("Format", clip.containerName)
                     InspectorRow("Size", clip.fileSize.formatted(.byteCount(style: .file)))
@@ -440,6 +448,56 @@ private struct ModelStatusView: View {
             }
         }
         .onAppear { model.refresh(for: size) }
+    }
+}
+
+/// Name and range of a subclip, and a link back to its source video.
+private struct SubclipSection: View {
+    @Bindable var subclip: Subclip
+    let clip: Clip
+    let clock: FrameClock?
+    let showSource: (() -> Void)?
+
+    var body: some View {
+        InspectorSection("Subclip") {
+            GridRow {
+                InspectorLabel("Name")
+                TextField("Name", text: $subclip.name)
+                    .labelsHidden()
+                    .textFieldStyle(.roundedBorder)
+                    .controlSize(.small)
+            }
+            GridRow {
+                InspectorLabel("Source")
+                Button(clip.name) { showSource?() }
+                    .buttonStyle(.link)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help("Show the source video")
+            }
+            let range = subclip.range(in: clip.duration)
+            InspectorRow("In", time(range.lowerBound))
+            InspectorRow("Out", lastFrame(range.upperBound))
+            InspectorRow("Length", time(range.upperBound - range.lowerBound))
+            GridRow {
+                Text("Mark In and Out to change this subclip. The source video isn't changed. Effects and Color below belong to the source video, so they apply to all of its subclips.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .gridCellColumns(2)
+            }
+        }
+    }
+
+    private func time(_ seconds: Double) -> String {
+        if let clock, clock.fps > 0 { return clock.timecode(seconds: seconds) }
+        return seconds.preciseTimecode
+    }
+
+    /// The out point shown as its last included frame, like the transport bar.
+    private func lastFrame(_ end: Double) -> String {
+        if let clock, clock.fps > 0 { return clock.timecode(frames: max(0, clock.frameIndex(at: end) - 1)) }
+        return end.preciseTimecode
     }
 }
 

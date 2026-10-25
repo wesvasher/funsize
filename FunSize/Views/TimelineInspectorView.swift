@@ -14,11 +14,12 @@ struct TimelineInspectorView: View {
                     ClipThumbnail(clip: clip, time: range.lowerBound)
                         .aspectRatio(16 / 9, contentMode: .fit)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
-                    LabeledContent("Clip", value: clip.name)
-                    LabeledContent("Original Length", value: clip.duration.preciseTimecode)
+                    LabeledContent("Clip", value: store.name(of: item))
+                    LabeledContent("Kind", value: item.subclipID == nil ? "Whole source video" : "Subclip of \(clip.name)")
+                    LabeledContent("Source Length", value: clip.duration.preciseTimecode)
                 }
 
-                Section("Trim") {
+                Section {
                     LabeledContent("Start", value: range.lowerBound.preciseTimecode)
                     Slider(
                         value: Binding(
@@ -39,7 +40,17 @@ struct TimelineInspectorView: View {
 
                     LabeledContent("Length", value: (range.upperBound - range.lowerBound).preciseTimecode)
 
-                    Button("Reset Trim") { store.resetTrim(for: item.id) }
+                    if item.subclipID != nil {
+                        Button("Use Whole Source Video") { store.resetTrim(for: item.id) }
+                    }
+                } header: {
+                    Text("Trim")
+                } footer: {
+                    Text(item.subclipID == nil
+                         ? "Trimming makes this a subclip. The source video isn't changed."
+                         : "Trimming changes this subclip. The source video isn't changed.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
                 Section {

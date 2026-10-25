@@ -1,8 +1,11 @@
 import SwiftUI
 
+/// Shows a source video, or a subclip of one. For a source video, In and Out mark the range
+/// for the next subclip; for a subclip, they change the subclip's range.
 struct ClipDetailView: View {
     @Environment(ProjectStore.self) private var store
     let clip: Clip
+    var subclip: Subclip? = nil
     @State private var controller = ClipPlayerController()
     @State private var keyMonitor = PlaybackKeyMonitor()
     /// Identifies this view as the full-screen source.
@@ -45,20 +48,20 @@ struct ClipDetailView: View {
 
             Divider()
 
-            TransportBar(controller: controller, clip: clip) {
-                store.addToTimeline([clip])
-            }
+            TransportBar(controller: controller, clip: clip, subclip: subclip,
+                         addSubclip: { store.addSubclip(from: clip) },
+                         addToTimeline: { store.addToTimeline([subclip.map { .subclip($0.id) } ?? .clip(clip.id)]) })
         }
         // No minimum size: a view beside an inspector that demands a minimum width makes the
         // split view re-layout in a loop until AppKit aborts (macOS 27). Narrow windows clip instead.
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
         .clipped()
         .focusedSceneValue(\.clipPlayer, controller)
-        .onChange(of: clip.id, initial: true) {
-            controller.load(clip)
-            let controller = controller, clip = clip
+        .onChange(of: [clip.id, subclip?.id], initial: true) {
+            controller.load(clip, subclip: subclip)
+            let controller = controller, title = subclip?.name ?? clip.name
             store.setFullScreenSource(.init(owner: sourceID) {
-                FullScreenPlayer.present(player: controller.player, title: clip.name) {
+                FullScreenPlayer.present(player: controller.player, title: title) {
                     controller.play()
                 } onClose: {
                     controller.pause()
@@ -75,7 +78,9 @@ struct ClipDetailView: View {
             await controller.applyEffects()
         }
         .inspector(isPresented: inspectorShown) {
-            ClipInspectorView(clip: clip, controller: controller)
+            ClipInspectorView(clip: clip, subclip: subclip, controller: controller) {
+                store.selection = [.clip(clip.id)]
+            }
                 .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
                 .inspectorColumnWidth(min: 220, ideal: 260, max: 400)
         }
@@ -106,6 +111,8 @@ private struct EffectsKey: Hashable {
 private struct TransportBar: View {
     let controller: ClipPlayerController
     let clip: Clip
+    let subclip: Subclip?
+    let addSubclip: () -> Void
     let addToTimeline: () -> Void
 
     var body: some View {
@@ -143,11 +150,11 @@ private struct TransportBar: View {
                 Button("Mark Out", systemImage: "chevron.right.to.line", action: controller.markOut)
                     .help("Mark out point (O)")
 
-                Readout(title: "In", value: clip.inPoint.map { clock.timecode(seconds: $0) } ?? "—")
-                Readout(title: "Out", value: clip.outPoint.map { clock.timecode(frames: max(0, clock.frameIndex(at: $0) - 1)) } ?? "—")
-                Readout(title: "Marked Length", value: markedLength(clock))
+                Readout(title: "In", value: controller.inPoint.map { clock.timecode(seconds: $0) } ?? "—")
+                Readout(title: "Out", value: controller.outPoint.map { clock.timecode(frames: max(0, clock.frameIndex(at: $0) - 1)) } ?? "—")
+                Readout(title: subclip == nil ? "Marked Length" : "Subclip Length", value: markedLength(clock))
 
-                if clip.hasMarks {
+                if subclip == nil, clip.hasMarks {
                     Button("Clear", systemImage: "xmark.circle.fill", action: controller.clearInOut)
                         .labelStyle(.iconOnly)
                         .buttonStyle(.borderless)
@@ -157,8 +164,17 @@ private struct TransportBar: View {
 
                 Spacer(minLength: 0)
 
-                Button("Add to Timeline", systemImage: "plus.rectangle.on.rectangle", action: addToTimeline)
-                    .help(clip.hasMarks ? "Add the marked range to the timeline" : "Add the clip to the timeline")
+                if subclip == nil, clip.hasMarks {
+                    // The marked range becomes a new subclip on the timeline; the source isn't changed.
+                    Button("Add Subclip", systemImage: "scissors", action: addSubclip)
+                        .buttonStyle(.borderedProminent)
+                        .help("Make a subclip from the marked range and add it to the timeline. The source video isn't changed.")
+                } else {
+                    Button("Add to Timeline", systemImage: "plus.rectangle.on.rectangle", action: addToTimeline)
+                        .help(subclip == nil
+                              ? "Add the whole source video to the timeline. To use part of it, mark in and out."
+                              : "Add this subclip to the timeline")
+                }
             }
         }
         .padding(.horizontal, 16)
@@ -167,7 +183,7 @@ private struct TransportBar: View {
     }
 
     private func markedLength(_ clock: FrameClock) -> String {
-        let range = clip.markedRange
+        let range = controller.markedRange
         let frames = clock.frameIndex(at: range.upperBound) - clock.frameIndex(at: range.lowerBound)
         return clock.timecode(frames: max(0, frames))
     }
@@ -262,13 +278,13 @@ private struct Scrubber: View {
             let width = proxy.size.width
             let duration = max(controller.duration, 0.001)
             let x = { (seconds: Double) in CGFloat(seconds / duration) * width }
-            let range = clip.markedRange
+            let range = controller.markedRange
             let inX = x(range.lowerBound), outX = x(range.upperBound)
 
             ZStack(alignment: .leading) {
                 filmstrip(width: width)
 
-                if clip.hasMarks {
+                if controller.hasMarks {
                     // Dim everything outside the marked range.
                     Rectangle().fill(.black.opacity(0.55))
                         .frame(width: inX)
@@ -290,7 +306,7 @@ private struct Scrubber: View {
                     .offset(x: min(max(0, x(controller.currentTime) - 1.5), width - 3))
                     .allowsHitTesting(false)
 
-                if clip.hasMarks {
+                if controller.hasMarks {
                     handle(edge: .leading)
                         .offset(x: min(inX, width - handleWidth))
                         .gesture(drag(.inPoint, width: width, duration: duration))
@@ -342,8 +358,8 @@ private struct Scrubber: View {
                     case .playhead:
                         // A plain click jumps to the spot; a Shift-click keeps the playhead where it is.
                         speed < 1 ? controller.currentTime : Double(min(max(0, x / width), 1)) * duration
-                    case .inPoint: clip.markedRange.lowerBound
-                    case .outPoint: clip.markedRange.upperBound
+                    case .inPoint: controller.markedRange.lowerBound
+                    case .outPoint: controller.markedRange.upperBound
                     }
                     anchor = DragAnchor(target: target, value: start, x: x, speed: speed, latest: start)
                 } else if anchor?.speed != speed, let current = anchor {

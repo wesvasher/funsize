@@ -6,12 +6,54 @@ extension UTType {
     nonisolated static let funsizeProject = UTType(exportedAs: "com.wesvasher.funsize.project")
 }
 
-/// What a project file stores: which videos are in it, each clip's marks and
-/// settings, and the timeline. Pictures and metadata are read from the videos again on open.
+/// What a project file stores: the source videos (with their marks and settings),
+/// subclips, and the timeline. Pictures and metadata are read from the videos again on open.
 nonisolated struct ProjectFile: Codable, Equatable, Sendable {
-    var version = 1
+    /// 2 added subclips; timeline items no longer have their own trims.
+    var version = 2
     var clips: [ClipRecord] = []
+    var subclips: [SubclipRecord] = []
     var timeline: [TimelineRecord] = []
+
+    init() {}
+
+    init(clips: [ClipRecord], subclips: [SubclipRecord] = [], timeline: [TimelineRecord]) {
+        self.clips = clips
+        self.subclips = subclips
+        self.timeline = timeline
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        clips = try c.decodeIfPresent([ClipRecord].self, forKey: .clips) ?? []
+        subclips = try c.decodeIfPresent([SubclipRecord].self, forKey: .subclips) ?? []
+        // Version 1 trimmed each timeline item; those trims become subclips.
+        let names = Dictionary(clips.map { ($0.id, URL(filePath: $0.path).deletingPathExtension().lastPathComponent) },
+                               uniquingKeysWith: { first, _ in first })
+        var counts: [UUID: Int] = [:]
+        timeline = try (c.decodeIfPresent([SavedTimelineItem].self, forKey: .timeline) ?? []).map { saved in
+            var record = TimelineRecord(id: saved.id, clipID: saved.clipID, subclipID: saved.subclipID)
+            let start = saved.trimStart ?? 0
+            if record.subclipID == nil, start > 0 || saved.trimEnd != nil {
+                counts[saved.clipID, default: 0] += 1
+                let subclip = SubclipRecord(id: UUID(), sourceID: saved.clipID,
+                                            name: "\(names[saved.clipID] ?? "Clip") Subclip \(counts[saved.clipID]!)",
+                                            start: start, end: saved.trimEnd)
+                subclips.append(subclip)
+                record.subclipID = subclip.id
+            }
+            return record
+        }
+    }
+
+    /// A timeline item as any version saved it.
+    private struct SavedTimelineItem: Decodable {
+        var id: UUID
+        var clipID: UUID
+        var subclipID: UUID?
+        var trimStart: Double?
+        var trimEnd: Double?
+    }
 
     struct ClipRecord: Codable, Equatable, Sendable {
         var id: UUID
@@ -58,11 +100,19 @@ nonisolated struct ProjectFile: Codable, Equatable, Sendable {
         }
     }
 
+    struct SubclipRecord: Codable, Equatable, Sendable {
+        var id: UUID
+        var sourceID: UUID
+        var name: String
+        var start: Double
+        var end: Double?
+    }
+
     struct TimelineRecord: Codable, Equatable, Sendable {
         var id: UUID
         var clipID: UUID
-        var trimStart: Double
-        var trimEnd: Double?
+        /// `nil` plays the whole source video.
+        var subclipID: UUID?
     }
 
     /// A new project holding these videos. Call while the app has access to them.
