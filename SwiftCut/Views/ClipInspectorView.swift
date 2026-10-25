@@ -140,7 +140,7 @@ struct ClipInspectorView: View {
                 if clip.hasVideo {
                     effects
                     color
-                    GradeSection(clip: clip)
+                    GradeSection(clip: clip, controller: controller)
                 }
             }
             .padding(.horizontal, 12)
@@ -313,7 +313,9 @@ struct ClipInspectorView: View {
                     GridRow {
                         InspectorLabel("Intensity")
                         HStack(spacing: 6) {
-                            Slider(value: $clip.lutIntensity, in: 0...1)
+                            Slider(value: $clip.lutIntensity, in: 0...1) { editing in
+                                editing ? controller?.beginColorAdjustment() : controller?.endColorAdjustment()
+                            }
                             Text("\(Int((clip.lutIntensity * 100).rounded()))%")
                                 .monospacedDigit()
                                 .frame(width: 34, alignment: .trailing)
@@ -486,6 +488,8 @@ private struct ModelStatusView: View {
 /// Basic color correction sliders, applied after the LUT. The preview follows them as you drag.
 private struct GradeSection: View {
     @Bindable var clip: Clip
+    /// The preview, which shows a quick low-resolution version while a slider is dragged.
+    var controller: ClipPlayerController?
     @State private var saveError: String?
 
     /// One slider: what it changes, its range, and how its value reads.
@@ -578,7 +582,9 @@ private struct GradeSection: View {
                 .onTapGesture(count: 2) { clip.grade[keyPath: control.keyPath] = 0 }
                 .help("\(control.help). Double-click to reset.")
             HStack(spacing: 6) {
-                Slider(value: $clip.grade[dynamicMember: control.keyPath], in: control.range)
+                Slider(value: $clip.grade[dynamicMember: control.keyPath], in: control.range) { editing in
+                    editing ? controller?.beginColorAdjustment() : controller?.endColorAdjustment()
+                }
                     .help(control.help)
                 Text(Self.format(value, exposure: control.isExposure))
                     .monospacedDigit()

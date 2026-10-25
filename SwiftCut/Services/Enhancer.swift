@@ -52,11 +52,18 @@ nonisolated struct EnhanceSettings: Hashable, Sendable {
         hasEffects || lut != nil || grade != nil
     }
 
-    /// What needs a new preview when it changes. The grade's values don't: the preview
-    /// follows them live (`LiveGrade`), so only whether there is a grade counts.
+    /// The LUT and grade together, or `nil` when there's neither.
+    var colorLook: ColorLook? {
+        lut == nil && grade == nil ? nil : ColorLook(lut: lut, grade: grade ?? ColorGrade())
+    }
+
+    /// What needs a new preview when it changes. The LUT and grade don't: the preview follows
+    /// them live (`LiveColor`), so only whether there is any color work counts.
     var structure: EnhanceSettings {
         var copy = self
-        if copy.grade != nil { copy.grade = ColorGrade() }
+        let hasColor = colorLook != nil
+        copy.lut = nil
+        copy.grade = hasColor ? ColorGrade() : nil
         return copy
     }
 
@@ -135,13 +142,13 @@ nonisolated enum Enhancer {
     /// Noise reduction needs neighboring frames at every moment, including right after a seek, so the
     /// video is added several more times, each shifted by a frame. The compositor then receives the
     /// current frame and its neighbors together.
-    /// `liveGrade` lets the preview change the grade without rebuilding; exports use `settings.grade`.
-    static func makePlayable(url: URL, settings: EnhanceSettings, liveGrade: LiveGrade? = nil) async throws -> (asset: AVAsset, videoComposition: AVVideoComposition?) {
+    /// `liveColor` lets the preview change the LUT and grade without rebuilding; exports use the settings'.
+    static func makePlayable(url: URL, settings: EnhanceSettings, liveColor: LiveColor? = nil) async throws -> (asset: AVAsset, videoComposition: AVVideoComposition?) {
         let source = AVURLAsset(url: url)
         guard settings.isActive else { return (source, nil) }
         try await checkModel(for: source, settings: settings)
         guard settings.denoiseStrength != nil else {
-            return (source, try await videoComposition(for: source, settings: settings, liveGrade: liveGrade))
+            return (source, try await videoComposition(for: source, settings: settings, liveColor: liveColor))
         }
 
         guard let video = try await source.loadTracks(withMediaType: .video).first else { return (source, nil) }
@@ -178,13 +185,13 @@ nonisolated enum Enhancer {
         let videoComposition = makeVideoComposition(
             settings: settings, duration: duration, sourceFrameDuration: step,
             mainTrack: main.trackID, neighborTracks: neighbors, displaySize: geometry.displaySize,
-            liveGrade: liveGrade
+            liveColor: liveColor
         )
         return (composition, videoComposition)
     }
 
     /// A video composition for `asset` without neighbor tracks (no noise reduction).
-    static func videoComposition(for asset: AVAsset, settings: EnhanceSettings, liveGrade: LiveGrade? = nil) async throws -> AVVideoComposition? {
+    static func videoComposition(for asset: AVAsset, settings: EnhanceSettings, liveColor: LiveColor? = nil) async throws -> AVVideoComposition? {
         guard settings.isActive, let video = try await asset.loadTracks(withMediaType: .video).first else { return nil }
         try await checkModel(for: asset, settings: settings)
         var settings = settings
@@ -195,7 +202,7 @@ nonisolated enum Enhancer {
             sourceFrameDuration: try await frameDuration(of: video),
             mainTrack: video.trackID, neighborTracks: [:],
             displaySize: try await VideoGeometry.load(video).displaySize,
-            liveGrade: liveGrade
+            liveColor: liveColor
         )
     }
 
@@ -212,7 +219,7 @@ nonisolated enum Enhancer {
     private static func makeVideoComposition(
         settings: EnhanceSettings, duration: CMTime, sourceFrameDuration: CMTime,
         mainTrack: CMPersistentTrackID, neighborTracks: [Int: CMPersistentTrackID], displaySize: CGSize,
-        liveGrade: LiveGrade?
+        liveColor: LiveColor?
     ) -> AVVideoComposition {
         let display = evenSize(displaySize)
         let outputFrameDuration = settings.fieldOrder != nil
@@ -223,7 +230,7 @@ nonisolated enum Enhancer {
             settings: settings, mainTrack: mainTrack, neighborTracks: neighborTracks,
             sourceFrameDuration: sourceFrameDuration, outputFrameDuration: outputFrameDuration,
             displaySize: display,
-            grade: settings.grade == nil ? nil : (liveGrade ?? LiveGrade(settings.grade!))
+            color: settings.colorLook.map { liveColor ?? LiveColor($0) }
         )
         return AVVideoComposition(configuration: .init(
             customVideoCompositorClass: EnhanceCompositor.self,
@@ -254,13 +261,13 @@ nonisolated final class EnhanceInstruction: NSObject, AVVideoCompositionInstruct
     let sourceFrameDuration: CMTime
     let outputFrameDuration: CMTime
     let displaySize: CGSize
-    /// The grade to apply, read for every frame. `nil` when there's no grade.
-    let grade: LiveGrade?
+    /// The LUT and grade to apply, read for every frame. `nil` when there's neither.
+    let color: LiveColor?
 
     init(timeRange: CMTimeRange, settings: EnhanceSettings, mainTrack: CMPersistentTrackID,
          neighborTracks: [Int: CMPersistentTrackID], sourceFrameDuration: CMTime,
-         outputFrameDuration: CMTime, displaySize: CGSize, grade: LiveGrade? = nil) {
-        self.grade = grade
+         outputFrameDuration: CMTime, displaySize: CGSize, color: LiveColor? = nil) {
+        self.color = color
         self.timeRange = timeRange
         self.settings = settings
         self.mainTrack = mainTrack
@@ -439,7 +446,7 @@ nonisolated final class EnhancePipeline {
         if scaler != nil {
             picture = try upscale(picture, time: time, isContinuous: isContinuous)
         }
-        if settings.sharpen > 0 || settings.lut != nil || instruction.grade != nil {
+        if settings.sharpen > 0 || instruction.color != nil {
             try finish(picture, into: output)
         } else {
             try copy(picture, into: output)
@@ -557,33 +564,9 @@ nonisolated final class EnhancePipeline {
         let original = CIImage(cvPixelBuffer: scratch, options: [.colorSpace: color])
         var image = original
 
-        if let applied = settings.lut {
-            // The cube works on the frame's own values (video code values, or Apple Log),
-            // which is what LUTs are made for.
-            let cube = CIFilter(name: "CIColorCubeWithColorSpace")!
-            cube.setValue(image, forKey: kCIInputImageKey)
-            cube.setValue(applied.lut.size, forKey: "inputCubeDimension")
-            cube.setValue(applied.lut.data, forKey: "inputCubeData")
-            cube.setValue(color, forKey: "inputColorSpace")
-            guard var graded = cube.outputImage else { throw EnhanceError.failed("Couldn't apply the LUT.") }
-            if applied.intensity < 0.999 {
-                let mix = CIFilter(name: "CIMix")!
-                mix.setValue(graded, forKey: kCIInputImageKey)
-                mix.setValue(image, forKey: kCIInputBackgroundImageKey)
-                mix.setValue(max(0, applied.intensity), forKey: kCIInputAmountKey)
-                graded = mix.outputImage ?? graded
-            }
-            image = graded
-        }
-
-        if let grade = instruction.grade?.lut() {
-            let cube = CIFilter(name: "CIColorCubeWithColorSpace")!
-            cube.setValue(image, forKey: kCIInputImageKey)
-            cube.setValue(grade.size, forKey: "inputCubeDimension")
-            cube.setValue(grade.data, forKey: "inputCubeData")
-            cube.setValue(color, forKey: "inputColorSpace")
-            guard let graded = cube.outputImage else { throw EnhanceError.failed("Couldn't apply the grade.") }
-            image = graded
+        if let live = instruction.color {
+            let (look, gradeLUT) = live.snapshot()
+            image = try ColorStage.apply(image, look: look, gradeLUT: gradeLUT, space: color)
         }
 
         if settings.sharpen > 0 {

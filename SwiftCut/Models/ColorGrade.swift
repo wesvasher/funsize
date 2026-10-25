@@ -1,3 +1,4 @@
+import CoreImage
 import Foundation
 import simd
 
@@ -133,30 +134,76 @@ nonisolated struct ColorGrade: Codable, Hashable, Sendable {
     }
 }
 
-/// The grade the preview shows, changeable while a video plays: the frame renderer reads it
-/// for every frame, so moving a slider doesn't rebuild the preview. Safe to use from any thread.
-nonisolated final class LiveGrade: @unchecked Sendable {
+/// Everything the color stage applies: the LUT (with its intensity), then the grade.
+nonisolated struct ColorLook: Hashable, Sendable {
+    var lut: AppliedLUT?
+    var grade = ColorGrade()
+
+    var isEmpty: Bool { lut == nil && grade.isIdentity }
+}
+
+/// The color the preview shows, changeable while a video plays: the frame renderer reads it
+/// for every frame, so choosing a LUT or moving a slider doesn't rebuild the preview.
+/// Safe to use from any thread.
+nonisolated final class LiveColor: @unchecked Sendable {
     private let lock = NSLock()
-    private var grade: ColorGrade
+    private var look: ColorLook
     private var cached: (grade: ColorGrade, lut: ColorLUT)?
 
-    init(_ grade: ColorGrade = ColorGrade()) {
-        self.grade = grade
+    init(_ look: ColorLook = ColorLook()) {
+        self.look = look
     }
 
-    var value: ColorGrade {
-        get { lock.withLock { grade } }
-        set { lock.withLock { grade = newValue } }
+    var value: ColorLook {
+        get { lock.withLock { look } }
+        set { lock.withLock { look = newValue } }
     }
 
-    /// The current grade as a cube, or `nil` when it changes nothing. Built once per change.
-    func lut() -> ColorLUT? {
+    /// The look, plus its grade as a cube (`nil` when the grade changes nothing), read together
+    /// so a frame never mixes two versions. The cube is built once per grade change.
+    func snapshot() -> (look: ColorLook, gradeLUT: ColorLUT?) {
         lock.withLock {
-            guard !grade.isIdentity else { return nil }
-            if let cached, cached.grade == grade { return cached.lut }
+            let grade = look.grade
+            guard !grade.isIdentity else { return (look, nil) }
+            if let cached, cached.grade == grade { return (look, cached.lut) }
             let lut = grade.makeLUT()
             cached = (grade, lut)
-            return lut
+            return (look, lut)
         }
+    }
+}
+
+/// Applies a LUT and grade to a picture with Core Image. Used for every video frame and for
+/// the quick preview shown while dragging color sliders.
+nonisolated enum ColorStage {
+    /// `space` is the color space `image` is tagged with. The cubes work on its raw values
+    /// (video code values, or Apple Log), which is what LUTs are made for.
+    static func apply(_ image: CIImage, look: ColorLook, gradeLUT: ColorLUT?, space: CGColorSpace) throws -> CIImage {
+        var image = image
+        if let applied = look.lut {
+            var graded = try cube(applied.lut, on: image, space: space)
+            if applied.intensity < 0.999 {
+                let mix = CIFilter(name: "CIMix")!
+                mix.setValue(graded, forKey: kCIInputImageKey)
+                mix.setValue(image, forKey: kCIInputBackgroundImageKey)
+                mix.setValue(max(0, applied.intensity), forKey: kCIInputAmountKey)
+                graded = mix.outputImage ?? graded
+            }
+            image = graded
+        }
+        if let gradeLUT {
+            image = try cube(gradeLUT, on: image, space: space)
+        }
+        return image
+    }
+
+    private static func cube(_ lut: ColorLUT, on image: CIImage, space: CGColorSpace) throws -> CIImage {
+        let filter = CIFilter(name: "CIColorCubeWithColorSpace")!
+        filter.setValue(image, forKey: kCIInputImageKey)
+        filter.setValue(lut.size, forKey: "inputCubeDimension")
+        filter.setValue(lut.data, forKey: "inputCubeData")
+        filter.setValue(space, forKey: "inputColorSpace")
+        guard let output = filter.outputImage else { throw EnhanceError.failed("Couldn't apply “\(lut.name)”.") }
+        return output
     }
 }

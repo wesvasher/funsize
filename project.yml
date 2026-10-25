@@ -67,6 +67,9 @@ targets:
         SWIFT_OBJC_BRIDGING_HEADER: SwiftCut/SwiftCut-Bridging-Header.h
         # Only C code (the per-frame deinterlace loop) is affected; keep it fast in debug builds.
         GCC_OPTIMIZATION_LEVEL: "3"
+        # The app is run from Debug builds; optimize Swift too so color math and frame work stay fast.
+        SWIFT_OPTIMIZATION_LEVEL: "-O"
+        SWIFT_COMPILATION_MODE: wholemodule
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: SwiftCut
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.video
@@ -75,6 +78,10 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_IDENTITY: "-"
+      configs:
+        # Needed only for distribution. In optimized local builds it stops the tests from loading.
+        Debug:
+          ENABLE_HARDENED_RUNTIME: NO
   SwiftCutTests:
     type: bundle.unit-test
     platform: macOS
@@ -84,6 +91,9 @@ targets:
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
+        # Signed like the app, or the hardened app refuses to load the tests.
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "-"
 schemes:
   SwiftCut:
     build:

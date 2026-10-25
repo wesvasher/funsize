@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreImage
 import Observation
 import VideoToolbox
 
@@ -44,10 +45,10 @@ final class ClipPlayerController {
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
     }
 
-    /// Effects currently built into the preview (with the grade's values left out: see `structure`).
+    /// Effects currently built into the preview (with the LUT and grade left out: see `structure`).
     @ObservationIgnored private var appliedSettings = EnhanceSettings()
-    /// The grade the preview shows. Moving a Grade slider changes it in place, without a rebuild.
-    let liveGrade = LiveGrade()
+    /// The LUT and grade the preview shows. Changing them updates it in place, without a rebuild.
+    let liveColor = LiveColor()
     /// The preview with effects, and the same without the Effects section (for "Show Original").
     @ObservationIgnored private var effectsItem: AVPlayerItem?
     @ObservationIgnored private var originalItem: AVPlayerItem?
@@ -83,6 +84,9 @@ final class ClipPlayerController {
         frameOutputs = [:]
         storedFrames = [:]
         freezeFrame = nil
+        colorProxy = nil
+        proxyBase = nil
+        isAdjustingColor = false
         attachFrameOutput(to: item)
         install(item)
         appliedSettings = EnhanceSettings()
@@ -95,10 +99,10 @@ final class ClipPlayerController {
     func applyEffects() async {
         guard let clip else { return }
         let settings = clip.enhanceSettings
-        liveGrade.value = settings.grade ?? ColorGrade()
+        liveColor.value = settings.colorLook ?? ColorLook()
         guard settings.structure != appliedSettings else { return }
         do {
-            let item = try await Self.makeItem(url: clip.url, settings: settings, liveGrade: liveGrade)
+            let item = try await Self.makeItem(url: clip.url, settings: settings, liveColor: liveColor)
             // The comparison version keeps Timing (deinterlace) so both play at the same frame rate.
             let original = settings.hasLook ? try await Self.makeItem(url: clip.url, settings: settings.timingOnly) : nil
             guard self.clip?.id == clip.id, !Task.isCancelled else { return }
@@ -184,13 +188,23 @@ final class ClipPlayerController {
         return storedFrames[key]?.image
     }
 
-    /// Shows the clip's current grade right away. Turning grading on or off still needs
+    /// Shows the clip's current LUT and grade right away. Turning color on or off still needs
     /// `applyEffects()`, which the view runs shortly after.
-    func updateGrade() {
+    func updateColor() {
         guard let clip else { return }
-        liveGrade.value = clip.enhanceSettings.grade ?? ColorGrade()
-        guard appliedSettings.grade != nil, let item = effectsItem else { return }
-        // The saved still of this version shows the old grade.
+        liveColor.value = clip.enhanceSettings.colorLook ?? ColorLook()
+        if isAdjustingColor, !isPlaying {
+            // While a slider is dragged, the quick preview shows changes; the full frame catches up on release.
+            renderProxy()
+        } else {
+            redrawFrame()
+        }
+    }
+
+    /// Draws the paused frame again so it shows the current color.
+    private func redrawFrame() {
+        guard appliedSettings.colorLook != nil, let item = effectsItem else { return }
+        // The saved still of this version shows the old color.
         storedFrames[ObjectIdentifier(item)] = nil
         // A paused player doesn't draw again by itself; seeking to the same spot redraws the frame.
         if !isPlaying, player.currentItem === item {
@@ -198,8 +212,111 @@ final class ClipPlayerController {
         }
     }
 
-    private static func makeItem(url: URL, settings: EnhanceSettings, liveGrade: LiveGrade? = nil) async throws -> AVPlayerItem {
-        let playable = try await Enhancer.makePlayable(url: url, settings: settings, liveGrade: liveGrade)
+    // MARK: Quick color preview
+
+    /// A smaller copy of the paused frame with the current color, shown over the player while a
+    /// color slider is dragged. Recoloring it is instant, unlike redrawing a full-size frame.
+    private(set) var colorProxy: CGImage?
+    @ObservationIgnored private var isAdjustingColor = false
+    /// The uncolored frame the quick preview starts from.
+    @ObservationIgnored private var proxyBase: (clipID: UUID, time: Double, image: ProxyImage)?
+    @ObservationIgnored private var isRenderingProxy = false
+    @ObservationIgnored private var proxyIsStale = false
+    /// Bumped by each drag, so an older drag's cleanup leaves a newer one's preview alone.
+    @ObservationIgnored private var adjustmentCount = 0
+
+    /// Longest side of the quick preview.
+    static let proxySize: CGFloat = 1280
+    /// The preview treats frame values as Rec. 709 video, as the player shows them.
+    nonisolated private static let proxySpace = CGColorSpace(name: CGColorSpace.itur_709)!
+    nonisolated private static let proxyContext = CIContext(options: [.cacheIntermediates: false])
+
+    /// A picture that can go to a background thread (Core Image images are immutable).
+    private struct ProxyImage: @unchecked Sendable { let image: CIImage }
+
+    /// Call when a color slider starts moving.
+    func beginColorAdjustment() {
+        adjustmentCount += 1
+        isAdjustingColor = true
+        guard !isPlaying, let clip else { return }
+        let time = currentTime
+        if let base = proxyBase, base.clipID == clip.id, base.time == time {
+            renderProxy()
+            return
+        }
+        Task { await loadProxyBase(for: clip, at: time) }
+    }
+
+    /// Call when a color slider is released. The quick preview stays until the full frame is ready.
+    func endColorAdjustment() {
+        isAdjustingColor = false
+        let drag = adjustmentCount
+        Task { await finishColorAdjustment(drag) }
+    }
+
+    private func loadProxyBase(for clip: Clip, at time: Double) async {
+        nonisolated(unsafe) let generator = AVAssetImageGenerator(asset: AVURLAsset(url: clip.url))
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: Self.proxySize, height: Self.proxySize)
+        generator.requestedTimeToleranceBefore = .zero
+        generator.requestedTimeToleranceAfter = .zero
+        guard let (frame, _) = try? await generator.image(at: CMTime(seconds: time, preferredTimescale: 90_000)),
+              self.clip?.id == clip.id else { return }
+        proxyBase = (clip.id, time, ProxyImage(image: CIImage(cgImage: frame, options: [.colorSpace: Self.proxySpace])))
+        if isAdjustingColor { renderProxy() }
+    }
+
+    /// Recolors the quick preview in the background. Only the newest settings are drawn.
+    private func renderProxy() {
+        guard isAdjustingColor, let base = proxyBase, base.clipID == clip?.id else { return }
+        guard !isRenderingProxy else {
+            proxyIsStale = true
+            return
+        }
+        isRenderingProxy = true
+        let (look, gradeLUT) = liveColor.snapshot()
+        let source = base.image
+        Task.detached(priority: .userInitiated) {
+            let image = (try? ColorStage.apply(source.image, look: look, gradeLUT: gradeLUT, space: Self.proxySpace)) ?? source.image
+            let frame = Self.proxyContext.createCGImage(image, from: source.image.extent, format: .RGBA8, colorSpace: Self.proxySpace)
+            await self.proxyRendered(frame)
+        }
+    }
+
+    private func proxyRendered(_ frame: CGImage?) {
+        isRenderingProxy = false
+        if isAdjustingColor, let frame { colorProxy = frame }
+        if proxyIsStale {
+            proxyIsStale = false
+            renderProxy()
+        }
+    }
+
+    /// Brings the full-size frame up to date, then removes the quick preview.
+    private func finishColorAdjustment(_ drag: Int) async {
+        guard colorProxy != nil || isRenderingProxy else { return }
+        // A rebuild may be on its way (when color was just turned on or off).
+        for _ in 0..<60 {
+            if let clip, clip.enhanceSettings.structure == appliedSettings { break }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        if let item = effectsItem, player.currentItem === item, !isPlaying {
+            storedFrames[ObjectIdentifier(item)] = nil
+            await player.seek(to: item.currentTime(), toleranceBefore: .zero, toleranceAfter: .zero)
+            if let output = frameOutputs[ObjectIdentifier(item)] {
+                for _ in 0..<100 where !output.hasNewPixelBuffer(forItemTime: item.currentTime()) {
+                    try? await Task.sleep(for: .milliseconds(10))
+                }
+            }
+            // Give the player view a moment to draw the new frame before uncovering it.
+            try? await Task.sleep(for: .milliseconds(40))
+        }
+        guard !isAdjustingColor, drag == adjustmentCount else { return }
+        colorProxy = nil
+    }
+
+    private static func makeItem(url: URL, settings: EnhanceSettings, liveColor: LiveColor? = nil) async throws -> AVPlayerItem {
+        let playable = try await Enhancer.makePlayable(url: url, settings: settings, liveColor: liveColor)
         let item = AVPlayerItem(asset: playable.asset)
         item.videoComposition = playable.videoComposition
         return item

@@ -40,6 +40,18 @@ struct ClipDetailView: View {
                     }
                 }
                 .overlay {
+                    // Quick, smaller preview of the color while a color slider is dragged.
+                    if let proxy = controller.colorProxy {
+                        Image(decorative: proxy, scale: 1)
+                            .resizable()
+                            .aspectRatio(clip.displaySize.width > 0 ? clip.displaySize.width / clip.displaySize.height : nil,
+                                         contentMode: .fit)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background(.black)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .overlay {
                     // Click the picture to play or pause.
                     Color.clear
                         .contentShape(Rectangle())
@@ -71,10 +83,10 @@ struct ClipDetailView: View {
         .onChange(of: clip.showCaptions) {
             Task { await controller.updateCaptions() }
         }
-        .onChange(of: clip.grade) {
-            controller.updateGrade()
+        .onChange(of: clip.enhanceSettings.colorLook) {
+            controller.updateColor()
         }
-        // Grade values aren't part of the key: the preview follows them live.
+        // The LUT and grade aren't part of the key: the preview follows them live.
         .task(id: EffectsKey(id: clip.id, settings: clip.enhanceSettings.structure)) {
             // Wait a moment so dragging a slider doesn't rebuild the preview on every tick.
             try? await Task.sleep(for: .milliseconds(200))

@@ -70,14 +70,17 @@ struct ColorGradeTests {
         #expect(old == ColorGrade(exposure: 1))
     }
 
-    @Test func liveGradeMakesOneCubePerChange() {
-        let live = LiveGrade()
-        #expect(live.lut() == nil)
-        live.value = ColorGrade(saturation: -1)
-        let first = live.lut()
-        #expect(first != nil && live.lut() === first)
-        live.value.saturation = -0.5
-        #expect(live.lut() !== first)
+    @Test func liveColorMakesOneCubePerChange() {
+        let live = LiveColor()
+        #expect(live.snapshot().gradeLUT == nil)
+        live.value.grade = ColorGrade(saturation: -1)
+        let first = live.snapshot().gradeLUT
+        #expect(first != nil && live.snapshot().gradeLUT === first)
+        // Changing the LUT alone keeps the grade's cube.
+        live.value.lut = AppliedLUT(lut: ColorLUT.builtIns[3], intensity: 0.5)
+        #expect(live.snapshot().gradeLUT === first)
+        live.value.grade.saturation = -0.5
+        #expect(live.snapshot().gradeLUT !== first)
     }
 
     @Test func gradeValuesDontRebuildThePreview() {
@@ -89,6 +92,11 @@ struct ColorGradeTests {
         clip.grade.contrast = 0.3
         let b = clip.enhanceSettings
         #expect(a != b && a.structure == b.structure && a.hasLook)
+        // Choosing a LUT or changing its intensity doesn't rebuild either.
+        clip.lutID = ColorLUT.builtIns[3].id
+        let c = clip.enhanceSettings
+        clip.lutIntensity = 0.4
+        #expect(c != clip.enhanceSettings && c.structure == b.structure && clip.enhanceSettings.structure == b.structure)
         #expect(clip.exportNameSuffix.contains("Graded"))
         // Show Original drops the grade.
         #expect(b.timingOnly.grade == nil)
@@ -150,15 +158,22 @@ struct GradePipelineTests {
 
     @Test func liveGradeChangesFramesWithoutRebuilding() async throws {
         let url = try await redClip()
-        let live = LiveGrade(ColorGrade(exposure: 0.0001))
-        let playable = try await Enhancer.makePlayable(url: url, settings: EnhanceSettings(grade: live.value), liveGrade: live)
+        let start = ColorLook(grade: ColorGrade(exposure: 0.0001))
+        let live = LiveColor(start)
+        let playable = try await Enhancer.makePlayable(url: url, settings: EnhanceSettings(grade: start.grade), liveColor: live)
         let before = try await renderedColor(playable.asset, playable.videoComposition)
         #expect(before.x - before.z > 0.4, "starts red: \(before)")
 
         // Same asset and composition: only the live value changes.
-        live.value = ColorGrade(saturation: -1)
+        live.value.grade = ColorGrade(saturation: -1)
         let after = try await renderedColor(playable.asset, playable.videoComposition)
         #expect(abs(after.x - after.z) < 0.05, "now black and white: \(after)")
+
+        // A LUT chosen afterwards also shows without a rebuild.
+        let warm = ColorLUT.builtIns.first { $0.name == "Warm" }!
+        live.value = ColorLook(lut: AppliedLUT(lut: warm, intensity: 1))
+        let warmed = try await renderedColor(playable.asset, playable.videoComposition)
+        #expect(warmed.x - warmed.z > 0.4, "red again, through the Warm LUT: \(warmed)")
     }
 
     @Test func exportUsesTheGrade() async throws {
@@ -204,5 +219,46 @@ struct ResetAllTests {
         #expect(!clip.isAtDefaults)
         clip.resetAll()
         #expect(clip.lutID == conversion && clip.isAtDefaults)
+    }
+}
+
+struct ColorProxyTests {
+    @Test func draggingShowsAQuickRecoloredFrameThenRemovesIt() async throws {
+        let dir = try TestVideo.tempDirectory()
+        let url = try await TestVideo.make(in: dir, name: "red", seconds: 1, size: CGSize(width: 1920, height: 1080)) { _, pixels in
+            CVPixelBufferLockBaseAddress(pixels, [])
+            let base = CVPixelBufferGetBaseAddress(pixels)!.assumingMemoryBound(to: UInt8.self)
+            for i in stride(from: 0, to: CVPixelBufferGetDataSize(pixels), by: 4) {
+                base[i] = 40; base[i + 1] = 40; base[i + 2] = 220; base[i + 3] = 255
+            }
+            CVPixelBufferUnlockBaseAddress(pixels, [])
+        }
+        let clip = Clip(url: url)
+        await MediaLoader.load(clip)
+        let controller = ClipPlayerController()
+        controller.load(clip)
+        controller.currentTime = 0.5
+
+        controller.beginColorAdjustment()
+        clip.grade.saturation = -1
+        controller.updateColor()
+        for _ in 0..<200 where controller.colorProxy == nil { try await Task.sleep(for: .milliseconds(10)) }
+        let proxy = try #require(controller.colorProxy)
+        #expect(max(proxy.width, proxy.height) <= Int(ClipPlayerController.proxySize))
+
+        // Wait for the newest settings to be drawn, then check the center is gray.
+        try await Task.sleep(for: .milliseconds(200))
+        let frame = try #require(controller.colorProxy)
+        var pixel = [UInt8](repeating: 0, count: 4)
+        let context = CGContext(data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                                space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.draw(frame.cropping(to: CGRect(x: frame.width / 2, y: frame.height / 2, width: 1, height: 1))!,
+                     in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        #expect(abs(Int(pixel[0]) - Int(pixel[2])) < 12, "black and white: \(pixel)")
+
+        controller.endColorAdjustment()
+        for _ in 0..<400 where controller.colorProxy != nil { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(controller.colorProxy == nil)
     }
 }
