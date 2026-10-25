@@ -590,6 +590,22 @@ final class ProjectStore {
         }
     }
 
+    /// The project's folder, for saving frame images. Asks once for permission to use it
+    /// (SwiftCut is sandboxed), or for a folder if the project hasn't been saved.
+    /// `nil` means cancelled.
+    func projectFolderForImages() async -> URL? {
+        guard let projectURL else {
+            return await chooseFolder(message: "This project hasn't been saved yet. Choose where to save the frame images.",
+                                      startingAt: exporter.lastChosenFolder)
+        }
+        let folder = projectURL.deletingLastPathComponent()
+        if exporter.canWrite(to: folder) { return folder }
+        return await chooseFolder(
+            message: "To save images next to “\(projectURL.deletingPathExtension().lastPathComponent)”, allow SwiftCut to use this folder by clicking Export Here. You only need to do this once.",
+            startingAt: folder
+        )
+    }
+
     /// Shown over the project window when exports can't go where Settings says.
     enum ExportPrompt: Equatable {
         case missingFolder(path: String)

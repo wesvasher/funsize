@@ -334,6 +334,20 @@ final class ClipPlayerController {
         item.select(option, in: group)
     }
 
+    /// The frame on screen at full size, as the viewer shows it (effects, LUT, and grade;
+    /// without them while Show Original is held).
+    func currentFrameImage() async throws -> CGImage {
+        guard let item = player.currentItem, clip?.hasVideo == true else {
+            throw EnhanceError.failed("There's no video frame to copy.")
+        }
+        nonisolated(unsafe) let generator = AVAssetImageGenerator(asset: item.asset)
+        generator.videoComposition = item.videoComposition
+        generator.appliesPreferredTrackTransform = true
+        generator.requestedTimeToleranceBefore = .zero
+        generator.requestedTimeToleranceAfter = .zero
+        return try await generator.image(at: item.currentTime()).image
+    }
+
     private func install(_ item: AVPlayerItem) {
         player.replaceCurrentItem(with: item)
         Task { await applyCaptions(to: item) }

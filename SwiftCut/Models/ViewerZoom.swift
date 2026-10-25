@@ -96,6 +96,20 @@ nonisolated enum ViewerZoom: Hashable, Sendable {
         return clamp(offset, display: display, viewport: viewport)
     }
 
+    /// The part of the picture on screen, as fractions of the picture (0…1, from the top left).
+    /// The whole picture is (0, 0, 1, 1).
+    static func visibleFraction(offset: CGSize, display: CGSize, viewport: CGSize) -> CGRect {
+        guard display.width > 0, display.height > 0 else { return CGRect(x: 0, y: 0, width: 1, height: 1) }
+        // The viewer's edges, in points from the picture's top-left corner.
+        let left = display.width / 2 - offset.width - viewport.width / 2
+        let top = display.height / 2 - offset.height - viewport.height / 2
+        let inView = CGRect(x: left, y: top, width: viewport.width, height: viewport.height)
+            .intersection(CGRect(origin: .zero, size: display))
+        guard !inView.isNull else { return .zero }
+        return CGRect(x: inView.minX / display.width, y: inView.minY / display.height,
+                      width: inView.width / display.width, height: inView.height / display.height)
+    }
+
     /// `offset` (points from centered) moved back inside the limits.
     static func clamp(_ offset: CGSize, display: CGSize, viewport: CGSize) -> CGSize {
         let limit = maxPan(display: display, viewport: viewport)

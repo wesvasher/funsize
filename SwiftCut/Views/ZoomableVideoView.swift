@@ -12,6 +12,10 @@ struct ZoomableVideoView: View {
     /// Where the picture sits, as a fraction of its on-screen size from centered.
     /// A fraction, so zooming keeps the same part of the picture in the middle.
     @Binding var pan: CGSize
+    /// Goes back to Fit (the navigator's close button).
+    var zoomToFit: () -> Void = {}
+    /// Told the part of the picture on screen (0…1 fractions) and its size there in pixels.
+    var reportView: (_ fraction: CGRect, _ pixels: CGSize) -> Void = { _, _ in }
 
     @Environment(\.displayScale) private var displayScale
     @State private var dragStart: CGSize?
@@ -44,7 +48,8 @@ struct ZoomableVideoView: View {
                 .overlay(alignment: .bottomTrailing) {
                     // Zoomed in: a map of the whole picture, with the part in view outlined.
                     if canPan {
-                        ViewerNavigator(offset: offset, display: display, viewport: viewport) { newOffset in
+                        ViewerNavigator(player: controller.player, offset: offset, display: display, viewport: viewport,
+                                        close: zoomToFit) { newOffset in
                             pan = CGSize(width: newOffset.width / display.width, height: newOffset.height / display.height)
                         }
                         .padding(12)
@@ -52,6 +57,12 @@ struct ZoomableVideoView: View {
                     }
                 }
                 .animation(.easeOut(duration: 0.15), value: canPan)
+                .onChange(of: [offset.width, offset.height, display.width, display.height, viewport.width, viewport.height, displayScale],
+                          initial: true) {
+                    let fraction = ViewerZoom.visibleFraction(offset: offset, display: display, viewport: viewport)
+                    reportView(fraction, CGSize(width: fraction.width * display.width * displayScale,
+                                                height: fraction.height * display.height * displayScale))
+                }
         }
         .background(.black)
         .clipped()
@@ -107,13 +118,15 @@ struct ZoomableVideoView: View {
     }
 }
 
-/// A small map of the whole picture (outline) with the part in view (colored box).
+/// A small, live copy of the whole picture with the part in view outlined.
 /// Drag the box to look around; click anywhere in the map to jump there.
 private struct ViewerNavigator: View {
+    let player: AVPlayer
     /// How far the picture has moved from centered, in points.
     let offset: CGSize
     let display: CGSize
     let viewport: CGSize
+    let close: () -> Void
     let move: (CGSize) -> Void
 
     /// Where the pointer grabbed the box, from the box's middle, so it doesn't jump.
@@ -126,8 +139,8 @@ private struct ViewerNavigator: View {
         let visible = ViewerZoom.visibleRect(offset: offset, display: display, viewport: viewport, navigator: size)
 
         ZStack(alignment: .topLeading) {
-            Rectangle()
-                .strokeBorder(.white.opacity(0.75), lineWidth: 1)
+            // The same player again: shows the current frame while playing and scrubbing.
+            PlayerLayerView(player: player)
 
             Rectangle()
                 .fill(Color.accentColor.opacity(0.18))
@@ -136,7 +149,7 @@ private struct ViewerNavigator: View {
                 .offset(x: visible.minX, y: visible.minY)
         }
         .frame(width: size.width, height: size.height)
-        .clipped()
+        .clipShape(RoundedRectangle(cornerRadius: 3))
         .padding(6)
         .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
         .overlay {
@@ -148,6 +161,23 @@ private struct ViewerNavigator: View {
         .help("Drag the box to move around the picture")
         .accessibilityElement()
         .accessibilityLabel("Zoom navigator")
+        .overlay(alignment: .topTrailing) {
+            // Outside the map's gesture, so a click here doesn't move the view.
+            // The whole circle is the button, not just the X: it's drawn inside the label.
+            Button(action: close) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 15, height: 15)
+                    .background(.black.opacity(0.8), in: Circle())
+                    .overlay { Circle().strokeBorder(.white.opacity(0.35)) }
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Zoom to Fit")
+            .offset(x: 5, y: -5)
+            .help("Zoom to fit")
+        }
     }
 
     /// The whole picture's shape, as big as fits in `maxSize`.
