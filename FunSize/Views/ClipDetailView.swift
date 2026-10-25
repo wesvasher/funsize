@@ -39,7 +39,7 @@ struct ClipDetailView: View {
             await controller.applyEffects()
         }
         .inspector(isPresented: $isShowingInspector) {
-            ClipInspectorView(clip: clip)
+            ClipInspectorView(clip: clip, controller: controller)
                 .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
                 .inspectorColumnWidth(min: 220, ideal: 260, max: 400)
         }

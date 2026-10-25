@@ -4,6 +4,11 @@ import SwiftUI
 /// Laid out compactly (like Finder's Get Info) so most clips fit without scrolling.
 struct ClipInspectorView: View {
     @Bindable var clip: Clip
+    /// The clip's preview player, for "Show Original".
+    var controller: ClipPlayerController?
+    @State private var presets = EffectsPresetStore.shared
+    @State private var isNamingPreset = false
+    @State private var presetName = ""
 
     var body: some View {
         ScrollView {
@@ -53,6 +58,10 @@ struct ClipInspectorView: View {
                     }
                 }
 
+                if clip.canDeinterlace {
+                    timing
+                }
+
                 if clip.hasVideo {
                     effects
                 }
@@ -65,34 +74,54 @@ struct ClipInspectorView: View {
         .controlSize(.small)
     }
 
+    /// Frame timing: turning interlaced fields into frames.
+    private var timing: some View {
+        InspectorSection("Timing") {
+            GridRow {
+                InspectorLabel("Deinterlace")
+                Toggle("To \(clip.deinterlacedRateLabel)", isOn: $clip.deinterlace)
+                    .toggleStyle(.switch)
+                    .help("Turns each field into its own frame (\(String(format: "%.4g", clip.frameRate * 2))i → \(clip.deinterlacedRateLabel)).")
+            }
+            if clip.deinterlace {
+                GridRow {
+                    InspectorLabel("Field Order")
+                    Picker("Field Order", selection: $clip.fieldOrderChoice) {
+                        Text("Auto (\((clip.detectedFieldOrder ?? .bottomFirst) == .topFirst ? "Top" : "Bottom") First)").tag(FieldOrder?.none)
+                        Divider()
+                        ForEach(FieldOrder.allCases) { order in
+                            Text(order.title).tag(FieldOrder?.some(order))
+                        }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    .help("Switch this if motion looks jittery or steps backward.")
+                }
+            }
+        }
+    }
+
+    /// Picture effects: noise, resolution, sharpening.
     @ViewBuilder
     private var effects: some View {
         InspectorSection("Effects") {
-            if clip.canDeinterlace {
-                GridRow {
-                    InspectorLabel("Deinterlace")
-                    Toggle("To \(clip.deinterlacedRateLabel)", isOn: $clip.deinterlace)
-                        .toggleStyle(.switch)
-                        .help("Turns each field into its own frame (\(String(format: "%.4g", clip.frameRate * 2))i → \(clip.deinterlacedRateLabel)).")
-                }
-                if clip.deinterlace {
-                    GridRow {
-                        InspectorLabel("Field Order")
-                        Picker("Field Order", selection: $clip.fieldOrderChoice) {
-                            Text("Auto (\((clip.detectedFieldOrder ?? .bottomFirst) == .topFirst ? "Top" : "Bottom") First)").tag(FieldOrder?.none)
-                            Divider()
-                            ForEach(FieldOrder.allCases) { order in
-                                Text(order.title).tag(FieldOrder?.some(order))
-                            }
-                        }
-                        .labelsHidden()
-                        .fixedSize()
-                        .help("Switch this if motion looks jittery or steps backward.")
-                    }
-                }
-            }
-
             if clip.canEnhance {
+                presetMenu
+            }
+        } content: {
+            if clip.canEnhance {
+                GridRow {
+                    PressAndHoldButton(
+                        title: "Show Original",
+                        systemImage: controller?.isShowingOriginal == true ? "eye.slash" : "eye",
+                        isEnabled: clip.enhanceSettings.hasEffects && controller != nil
+                    ) { pressed in
+                        controller?.showOriginal(pressed)
+                    }
+                    .help("Hold to see the clip without effects. Release to see them again.")
+                    .gridCellColumns(2)
+                }
+
                 GridRow {
                     InspectorLabel("Reduce Noise")
                     Toggle("On", isOn: $clip.denoise)
@@ -145,7 +174,7 @@ struct ClipInspectorView: View {
                     }
                     .help("A light final sharpen. Too much makes tape noise stand out.")
                 }
-            } else if !clip.canDeinterlace {
+            } else {
                 GridRow {
                     Text(clip.isRotated ? "Not available for rotated video yet" : "None available for this clip")
                         .foregroundStyle(.secondary)
@@ -163,7 +192,7 @@ struct ClipInspectorView: View {
 
             if clip.enhanceSettings.isActive {
                 GridRow {
-                    Text("Shown in the preview and used for exports of this clip. The timeline uses the original.")
+                    Text("Timing and effects show in the preview and are used for exports of this clip. The timeline uses the original.")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -171,6 +200,53 @@ struct ClipInspectorView: View {
                 }
             }
         }
+        .alert("Save Effects Set", isPresented: $isNamingPreset) {
+            TextField("Name", text: $presetName)
+            Button("Save") { presets.save(name: presetName, from: clip) }
+                .disabled(presetName.trimmingCharacters(in: .whitespaces).isEmpty)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Saves Reduce Noise, Enhance, and Sharpen so you can use them on other clips. A set with the same name is replaced.")
+        }
+    }
+
+    /// Save, load, and reset effect settings.
+    private var presetMenu: some View {
+        let current = presets.presets.first { $0.matches(clip) }
+        return Menu {
+            if presets.presets.isEmpty {
+                Text("No Saved Sets")
+            } else {
+                Section("Load") {
+                    ForEach(presets.presets) { preset in
+                        Toggle(preset.name, isOn: Binding(
+                            get: { preset.matches(clip) },
+                            set: { _ in preset.apply(to: clip) }
+                        ))
+                    }
+                }
+            }
+            Divider()
+            Button("Save Current Settings…") {
+                presetName = current?.name ?? ""
+                isNamingPreset = true
+            }
+            Button("Reset to Defaults") { clip.resetEffects() }
+            if !presets.presets.isEmpty {
+                Menu("Delete") {
+                    ForEach(presets.presets) { preset in
+                        Button(preset.name, role: .destructive) { presets.delete(preset) }
+                    }
+                }
+            }
+        } label: {
+            Text(current?.name ?? (clip.enhanceSettings.hasEffects ? "Custom" : "Default"))
+                .font(.caption)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.borderless)
+        .fixedSize()
+        .help("Effects sets: save, load, or reset these settings")
     }
 
     // MARK: Formatting
@@ -249,24 +325,70 @@ private struct ModelStatusView: View {
 // MARK: Building blocks
 
 /// A small uppercase heading over a two-column grid of rows.
-private struct InspectorSection<Content: View>: View {
+private struct InspectorSection<Accessory: View, Content: View>: View {
     let title: String
-    @ViewBuilder let content: Content
+    let accessory: Accessory
+    let content: Content
 
-    init(_ title: String, @ViewBuilder content: () -> Content) {
+    init(_ title: String, @ViewBuilder accessory: () -> Accessory, @ViewBuilder content: () -> Content) {
         self.title = title
+        self.accessory = accessory()
         self.content = content()
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(title.uppercased())
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
+            HStack(alignment: .firstTextBaseline) {
+                Text(title.uppercased())
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 4)
+                accessory
+            }
             Divider()
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 8, verticalSpacing: 4) {
                 content
             }
+        }
+    }
+}
+
+extension InspectorSection where Accessory == EmptyView {
+    init(_ title: String, @ViewBuilder content: () -> Content) {
+        self.init(title, accessory: { EmptyView() }, content: content)
+    }
+}
+
+/// A button that reports when it's pressed and released (for before/after comparisons).
+private struct PressAndHoldButton: View {
+    let title: String
+    let systemImage: String
+    var isEnabled = true
+    let onChange: (Bool) -> Void
+
+    var body: some View {
+        Button {} label: {
+            Label(title, systemImage: systemImage)
+                .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(HoldStyle(onChange: onChange))
+        .disabled(!isEnabled)
+    }
+
+    private struct HoldStyle: ButtonStyle {
+        let onChange: (Bool) -> Void
+        @Environment(\.isEnabled) private var isEnabled
+
+        func makeBody(configuration: Configuration) -> some View {
+            configuration.label
+                .padding(.vertical, 4)
+                .foregroundStyle(configuration.isPressed ? Color.white : (isEnabled ? Color.primary : Color.secondary))
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(configuration.isPressed ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.quaternary))
+                )
+                .contentShape(Rectangle())
+                .onChange(of: configuration.isPressed) { _, pressed in onChange(pressed) }
         }
     }
 }

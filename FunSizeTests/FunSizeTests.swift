@@ -93,8 +93,15 @@ struct StoreTests {
 
 /// Writes short solid-color videos for tests.
 enum TestVideo {
+    /// One folder for all test files. It's emptied at the start of each test run so videos don't pile up.
+    private static let root: URL = {
+        let url = FileManager.default.temporaryDirectory.appending(path: "FunSizeTests", directoryHint: .isDirectory)
+        try? FileManager.default.removeItem(at: url)
+        return url
+    }()
+
     static func tempDirectory() throws -> URL {
-        let url = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString, directoryHint: .isDirectory)
+        let url = root.appending(path: UUID().uuidString, directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }
@@ -689,5 +696,66 @@ struct EffectsPreviewTests {
             window.displayIfNeeded()
         }
         #expect(clip.effectsError == nil)
+    }
+}
+
+struct EffectsSetTests {
+    @Test func saveLoadResetAndPersist() throws {
+        let defaults = try #require(UserDefaults(suiteName: "FunSizeTests.presets.\(UUID().uuidString)"))
+        let store = EffectsPresetStore(defaults: defaults)
+        let clip = Clip(url: URL(fileURLWithPath: "/tmp/a.mov"))
+        clip.denoise = true
+        clip.denoiseStrength = 0.7
+        clip.upscale = .fast
+        clip.sharpen = 0.2
+        store.save(name: "VHS Cleanup", from: clip)
+
+        clip.resetEffects()
+        #expect(!clip.denoise && clip.upscale == .off && clip.sharpen == 0)
+        #expect(clip.deinterlace == false)
+
+        let preset = try #require(store.presets.first)
+        preset.apply(to: clip)
+        #expect(clip.denoise && clip.denoiseStrength == 0.7 && clip.upscale == .fast && clip.sharpen == 0.2)
+        #expect(preset.matches(clip))
+
+        // Same name replaces; sets survive a relaunch.
+        clip.sharpen = 0.5
+        store.save(name: "vhs cleanup", from: clip)
+        #expect(store.presets.count == 1)
+        let reloaded = EffectsPresetStore(defaults: defaults)
+        #expect(reloaded.presets.first?.sharpen == 0.5)
+
+        reloaded.delete(try #require(reloaded.presets.first))
+        #expect(EffectsPresetStore(defaults: defaults).presets.isEmpty)
+    }
+
+    @Test func showOriginalSwapsAndKeepsPosition() async throws {
+        let dir = try TestVideo.tempDirectory()
+        let url = try await EnhanceTests.noisyClip(in: dir, seconds: 2)
+        let clip = Clip(url: url)
+        await MediaLoader.load(clip)
+        let controller = ClipPlayerController()
+        controller.load(clip)
+        clip.deinterlace = true
+        clip.denoise = true
+        clip.upscale = .fast
+        await controller.applyEffects()
+        controller.seek(to: 1)
+
+        let effectsSize = controller.player.currentItem?.videoComposition?.renderSize
+        #expect(effectsSize == CGSize(width: 1280, height: 960))
+
+        controller.showOriginal(true)
+        #expect(controller.isShowingOriginal)
+        // Original keeps Timing (deinterlaced 60p) but drops Effects.
+        let original = try #require(controller.player.currentItem?.videoComposition)
+        #expect(original.renderSize == CGSize(width: 640, height: 480))
+        #expect(original.frameDuration == CMTime(value: 1, timescale: 60))
+        #expect(abs(controller.currentTime - 1) < 0.02)
+
+        controller.showOriginal(false)
+        #expect(controller.player.currentItem?.videoComposition?.renderSize == effectsSize)
+        #expect(abs(controller.currentTime - 1) < 0.02)
     }
 }

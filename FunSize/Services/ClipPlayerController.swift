@@ -38,14 +38,23 @@ final class ClipPlayerController {
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
     }
 
-    /// Effects currently shown in the preview.
+    /// Effects currently built into the preview.
     @ObservationIgnored private var appliedSettings = EnhanceSettings()
+    /// The preview with effects, and the same without the Effects section (for "Show Original").
+    @ObservationIgnored private var effectsItem: AVPlayerItem?
+    @ObservationIgnored private var originalItem: AVPlayerItem?
+    /// True while the user holds "Show Original".
+    private(set) var isShowingOriginal = false
 
     func load(_ clip: Clip) {
         guard clip.id != self.clip?.id else { return }
         self.clip = clip
         pause()
-        install(AVPlayerItem(url: clip.url))
+        let item = AVPlayerItem(url: clip.url)
+        effectsItem = item
+        originalItem = nil
+        isShowingOriginal = false
+        install(item)
         appliedSettings = EnhanceSettings()
         currentTime = 0
     }
@@ -56,12 +65,14 @@ final class ClipPlayerController {
         let settings = clip.enhanceSettings
         guard settings != appliedSettings else { return }
         do {
-            let playable = try await Enhancer.makePlayable(url: clip.url, settings: settings)
+            let item = try await Self.makeItem(url: clip.url, settings: settings)
+            // The comparison version keeps Timing (deinterlace) so both play at the same frame rate.
+            let original = settings.hasEffects ? try await Self.makeItem(url: clip.url, settings: settings.timingOnly) : nil
             guard self.clip?.id == clip.id, !Task.isCancelled else { return }
-            let item = AVPlayerItem(asset: playable.asset)
-            item.videoComposition = playable.videoComposition
             let resumeAt = currentTime, wasPlaying = isPlaying
-            install(item)
+            effectsItem = item
+            originalItem = original
+            install(isShowingOriginal ? (original ?? item) : item)
             appliedSettings = settings
             clip.effectsError = nil
             seek(to: resumeAt)
@@ -69,6 +80,25 @@ final class ClipPlayerController {
         } catch {
             clip.effectsError = error.localizedDescription
         }
+    }
+
+    /// Shows the clip without its Effects while `on` is true, then switches back.
+    /// Both versions stay loaded, so the switch is immediate and keeps the position.
+    func showOriginal(_ on: Bool) {
+        guard on != isShowingOriginal else { return }
+        isShowingOriginal = on
+        guard let target = on ? (originalItem ?? effectsItem) : effectsItem, target !== player.currentItem else { return }
+        let resumeAt = currentTime, wasPlaying = isPlaying
+        install(target)
+        seek(to: resumeAt)
+        if wasPlaying { player.playImmediately(atRate: playbackSpeed) }
+    }
+
+    private static func makeItem(url: URL, settings: EnhanceSettings) async throws -> AVPlayerItem {
+        let playable = try await Enhancer.makePlayable(url: url, settings: settings)
+        let item = AVPlayerItem(asset: playable.asset)
+        item.videoComposition = playable.videoComposition
+        return item
     }
 
     private func install(_ item: AVPlayerItem) {

@@ -21,6 +21,7 @@
 		62C90815E8DB103FDD4DF408 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 91EEAB40D409F3DA9177CE4E /* Assets.xcassets */; };
 		645F950D64DDFF8A714A519D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A06CD73C7FCAE863B633825C /* SettingsView.swift */; };
 		6C09D17247C6278FD11AFF5B /* Bob.c in Sources */ = {isa = PBXBuildFile; fileRef = 1B0289711F60D3D04697EA5F /* Bob.c */; };
+		76D7B290F7A12B6D682497A6 /* EffectsPresets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B5B76CB5392225664517BE6 /* EffectsPresets.swift */; };
 		77FEAC945596F29AA6530CED /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 414974BBC0C760255B1E455C /* ContentView.swift */; };
 		8B6AA344B0CB5AEE84CAB8FA /* ClipDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB4DD8807247B8B5A52F3CDB /* ClipDetailView.swift */; };
 		9D3D28EE07F5737FB7604092 /* PlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9166EF3510B260CAA486983A /* PlayerView.swift */; };
@@ -56,6 +57,7 @@
 		3AE75A8DBE4568FA8A01FED4 /* MediaLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaLoader.swift; sourceTree = "<group>"; };
 		4148BEF3A1767837955280B0 /* FunSize-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "FunSize-Bridging-Header.h"; sourceTree = "<group>"; };
 		414974BBC0C760255B1E455C /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		4B5B76CB5392225664517BE6 /* EffectsPresets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EffectsPresets.swift; sourceTree = "<group>"; };
 		4BF2C60831286D49FE643741 /* FunSize.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FunSize.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4D0765D5527B6289E6319418 /* Clip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Clip.swift; sourceTree = "<group>"; };
 		55C1854074C9685942B9FCDA /* FunSizeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FunSizeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -116,6 +118,7 @@
 			isa = PBXGroup;
 			children = (
 				4D0765D5527B6289E6319418 /* Clip.swift */,
+				4B5B76CB5392225664517BE6 /* EffectsPresets.swift */,
 				1BB23B5AB67E265BCED52AF1 /* ExportFormat.swift */,
 				C68CC0E4CF9DA8193CE595A7 /* FrameClock.swift */,
 				58695AD125524C438F965970 /* ProjectStore.swift */,
@@ -270,6 +273,7 @@
 				05C443DCAED5110432A9496C /* CompositionBuilder.swift in Sources */,
 				77FEAC945596F29AA6530CED /* ContentView.swift in Sources */,
 				08F98D73A5518B4FE448E45C /* Deinterlacer.swift in Sources */,
+				76D7B290F7A12B6D682497A6 /* EffectsPresets.swift in Sources */,
 				5EB00034BC45C978E5E2DFAD /* Enhancer.swift in Sources */,
 				E6C74FD7DAD27D8E8B56B794 /* ExportFormat.swift in Sources */,
 				31BC2E746B84C033485C07FF /* ExportManager.swift in Sources */,

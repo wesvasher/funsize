@@ -3,7 +3,7 @@ import CoreImage
 import VideoToolbox
 
 /// Super-resolution choices.
-nonisolated enum UpscaleMode: String, CaseIterable, Identifiable, Hashable, Sendable {
+nonisolated enum UpscaleMode: String, CaseIterable, Identifiable, Hashable, Codable, Sendable {
     case off
     /// Apple's low-latency scaler: 2×, no download, fast enough for live preview.
     case fast
@@ -40,7 +40,17 @@ nonisolated struct EnhanceSettings: Hashable, Sendable {
     var sharpen: Float = 0
 
     var isActive: Bool {
-        fieldOrder != nil || denoiseStrength != nil || upscale != .off || sharpen > 0
+        fieldOrder != nil || hasEffects
+    }
+
+    /// Anything from the Effects section (as opposed to Timing).
+    var hasEffects: Bool {
+        denoiseStrength != nil || upscale != .off || sharpen > 0
+    }
+
+    /// The same settings with the Effects section turned off, for "Show Original".
+    var timingOnly: EnhanceSettings {
+        EnhanceSettings(fieldOrder: fieldOrder)
     }
 }
 

@@ -85,6 +85,14 @@ final class Clip: Identifiable {
         )
     }
 
+    /// Turns the Effects section back to its defaults (Timing is left alone).
+    func resetEffects() {
+        denoise = false
+        denoiseStrength = 0.5
+        upscale = .off
+        sharpen = 0
+    }
+
     /// Picture size after effects (upscaling makes it bigger).
     var outputSize: CGSize {
         enhanceSettings.upscale == .off ? displaySize : Enhancer.outputSize(displaySize: displaySize, upscale: upscale)
