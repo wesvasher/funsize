@@ -789,3 +789,20 @@ struct NoFlashTests {
         #expect(controller.freezeFrame == nil)
     }
 }
+
+struct CaptionTests {
+    @Test func clipsWithoutCaptionsHideTheSwitch() async throws {
+        let dir = try TestVideo.tempDirectory()
+        let url = try await TestVideo.make(in: dir, name: "silent", seconds: 1, size: CGSize(width: 320, height: 240))
+        let clip = Clip(url: url)
+        await MediaLoader.load(clip)
+        #expect(!clip.hasCaptions)
+        #expect(clip.showCaptions)  // on by default when captions exist
+
+        let controller = ClipPlayerController()
+        #expect(!controller.player.appliesMediaSelectionCriteriaAutomatically)
+        controller.load(clip)
+        clip.showCaptions = false
+        await controller.updateCaptions()  // no captions: nothing to change, no crash
+    }
+}

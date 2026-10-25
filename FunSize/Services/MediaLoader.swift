@@ -43,6 +43,10 @@ enum MediaLoader {
                     clip.audioChannels = Int(description.mChannelsPerFrame)
                 }
             }
+            // Captions: real caption tracks, or macOS transcribing the audio.
+            if let group = try? await asset.loadMediaSelectionGroup(for: .legible), let option = group.options.first {
+                clip.captionName = option.displayName
+            }
             clip.containerName = (try? clip.url.resourceValues(forKeys: [.contentTypeKey]).contentType)?.localizedDescription
             if let created = try? await asset.load(.creationDate) {
                 clip.creationDate = try? await created.load(.dateValue)

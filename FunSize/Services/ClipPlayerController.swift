@@ -24,6 +24,8 @@ final class ClipPlayerController {
     @ObservationIgnored private var endObserver: NSObjectProtocol?
 
     init() {
+        // Captions follow the inspector switch, not the system's automatic choice.
+        player.appliesMediaSelectionCriteriaAutomatically = false
         timeObserver = player.addPeriodicTimeObserver(
             forInterval: CMTime(value: 1, timescale: 120), queue: .main
         ) { [weak self] time in
@@ -172,8 +174,21 @@ final class ClipPlayerController {
         return item
     }
 
+    /// Shows or hides captions on the current preview to match the clip's setting.
+    func updateCaptions() async {
+        guard let item = player.currentItem else { return }
+        await applyCaptions(to: item)
+    }
+
+    private func applyCaptions(to item: AVPlayerItem) async {
+        guard let clip, let group = try? await item.asset.loadMediaSelectionGroup(for: .legible) else { return }
+        let option = clip.showCaptions ? group.options.first : nil
+        item.select(option, in: group)
+    }
+
     private func install(_ item: AVPlayerItem) {
         player.replaceCurrentItem(with: item)
+        Task { await applyCaptions(to: item) }
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
         endObserver = NotificationCenter.default.addObserver(
             forName: AVPlayerItem.didPlayToEndTimeNotification, object: item, queue: .main

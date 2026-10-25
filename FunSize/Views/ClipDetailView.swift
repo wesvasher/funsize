@@ -43,6 +43,9 @@ struct ClipDetailView: View {
         .onChange(of: clip.id, initial: true) {
             controller.load(clip)
         }
+        .onChange(of: clip.showCaptions) {
+            Task { await controller.updateCaptions() }
+        }
         .task(id: EffectsKey(id: clip.id, settings: clip.enhanceSettings)) {
             // Wait a moment so dragging a slider doesn't rebuild the preview on every tick.
             try? await Task.sleep(for: .milliseconds(200))

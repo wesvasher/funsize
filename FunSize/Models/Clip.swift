@@ -61,6 +61,14 @@ final class Clip: Identifiable {
     /// Frame rate of what plays and exports: doubled when deinterlacing.
     var outputFrameRate: Float { isDeinterlacing ? frameRate * 2 : frameRate }
 
+    // MARK: Captions
+
+    /// Name of the caption option the system offers, e.g. "English (US) Transcribed". `nil` when there are none.
+    var captionName: String?
+    var hasCaptions: Bool { captionName != nil }
+    /// Show captions over the preview.
+    var showCaptions = true
+
     // MARK: Enhancement
 
     var denoise = false

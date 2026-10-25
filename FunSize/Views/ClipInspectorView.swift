@@ -58,6 +58,26 @@ struct ClipInspectorView: View {
                     }
                 }
 
+                if clip.hasCaptions {
+                    InspectorSection("Captions") {
+                        GridRow {
+                            InspectorLabel("Show")
+                            Toggle("Captions", isOn: $clip.showCaptions)
+                                .toggleStyle(.switch)
+                        }
+                        InspectorRow("Source", clip.captionName)
+                        if clip.captionName?.localizedCaseInsensitiveContains("transcribed") == true {
+                            GridRow {
+                                Text("Transcribed from the audio by macOS. Shown in the preview only, not in exports.")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .gridCellColumns(2)
+                            }
+                        }
+                    }
+                }
+
                 if clip.canDeinterlace {
                     timing
                 }
