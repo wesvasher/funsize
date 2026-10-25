@@ -11,6 +11,9 @@ struct ClipDetailView: View {
     /// Identifies this view as the full-screen source.
     @State private var sourceID = UUID()
     @AppStorage("showClipInspector") private var isShowingInspector = true
+    /// The viewer's zoom stays the same from clip to clip; the picture goes back to centered.
+    @State private var zoom = ViewerZoom.fit
+    @State private var pan = CGSize.zero
 
     /// The inspector, hidden while both sidebars are hidden (⌘.). Showing it by hand
     /// brings the left sidebar back too.
@@ -26,37 +29,25 @@ struct ClipDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            PlayerView(player: controller.player, showsControls: false)
-                .background(.black)
-                .overlay {
-                    // Still frame that covers version switches (Show Original), so there's no black flash.
-                    if let frame = controller.freezeFrame {
-                        Image(decorative: frame, scale: 1)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .background(.black)
-                            .allowsHitTesting(false)
-                    }
+            // Viewer header: zoom on the right.
+            HStack {
+                if clip.outputSize != .zero {
+                    Text("\(Int(clip.outputSize.width)) × \(Int(clip.outputSize.height))")
+                        .font(.callout.monospacedDigit())
+                        .foregroundStyle(.secondary)
                 }
-                .overlay {
-                    // Quick, smaller preview of the color while a color slider is dragged.
-                    if let proxy = controller.colorProxy {
-                        Image(decorative: proxy, scale: 1)
-                            .resizable()
-                            .aspectRatio(clip.displaySize.width > 0 ? clip.displaySize.width / clip.displaySize.height : nil,
-                                         contentMode: .fit)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .background(.black)
-                            .allowsHitTesting(false)
-                    }
-                }
-                .overlay {
-                    // Click the picture to play or pause.
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture { controller.togglePlayPause() }
-                }
+                Spacer(minLength: 8)
+                ViewerZoomControl(zoom: $zoom)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+            .background(.bar)
+
+            Divider()
+
+            ZoomableVideoView(controller: controller,
+                              pictureSize: clip.outputSize == .zero ? clip.displaySize : clip.outputSize,
+                              zoom: zoom, pan: $pan)
 
             Divider()
 
@@ -71,6 +62,7 @@ struct ClipDetailView: View {
         .focusedSceneValue(\.clipPlayer, controller)
         .onChange(of: [ObjectIdentifier(clip), subclip.map(ObjectIdentifier.init)], initial: true) {
             controller.load(clip, subclip: subclip)
+            pan = .zero
             let controller = controller, title = subclip?.name ?? clip.name
             store.setFullScreenSource(.init(owner: sourceID) {
                 FullScreenPlayer.present(player: controller.player, title: title) {
