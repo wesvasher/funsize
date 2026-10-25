@@ -38,32 +38,47 @@ final class ClipPlayerController {
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
     }
 
+    /// Effects currently shown in the preview.
+    @ObservationIgnored private var appliedSettings = EnhanceSettings()
+
     func load(_ clip: Clip) {
         guard clip.id != self.clip?.id else { return }
         self.clip = clip
         pause()
-        let item = AVPlayerItem(url: clip.url)
-        player.replaceCurrentItem(with: item)
+        install(AVPlayerItem(url: clip.url))
+        appliedSettings = EnhanceSettings()
         currentTime = 0
+    }
 
+    /// Rebuilds the preview so it shows the clip's current effects (deinterlace, noise, upscale, sharpen).
+    func applyEffects() async {
+        guard let clip else { return }
+        let settings = clip.enhanceSettings
+        guard settings != appliedSettings else { return }
+        do {
+            let playable = try await Enhancer.makePlayable(url: clip.url, settings: settings)
+            guard self.clip?.id == clip.id, !Task.isCancelled else { return }
+            let item = AVPlayerItem(asset: playable.asset)
+            item.videoComposition = playable.videoComposition
+            let resumeAt = currentTime, wasPlaying = isPlaying
+            install(item)
+            appliedSettings = settings
+            clip.effectsError = nil
+            seek(to: resumeAt)
+            if wasPlaying { player.playImmediately(atRate: playbackSpeed) }
+        } catch {
+            clip.effectsError = error.localizedDescription
+        }
+    }
+
+    private func install(_ item: AVPlayerItem) {
+        player.replaceCurrentItem(with: item)
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
         endObserver = NotificationCenter.default.addObserver(
             forName: AVPlayerItem.didPlayToEndTimeNotification, object: item, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.isPlaying = false }
         }
-    }
-
-    /// Turns deinterlacing on or off in the preview to match the clip's setting.
-    func updateVideoComposition() async {
-        guard let clip, let item = player.currentItem else { return }
-        if clip.isDeinterlacing {
-            item.videoComposition = try? await Deinterlacer.videoComposition(for: item.asset, fieldOrder: clip.fieldOrder)
-        } else {
-            item.videoComposition = nil
-        }
-        // Redraw the paused frame with the new setting.
-        seek(to: currentTime)
     }
 
     // MARK: Timing

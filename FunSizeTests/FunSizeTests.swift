@@ -506,3 +506,188 @@ struct PictureShapeTests {
         #expect(geometry.displaySize == CGSize(width: 1080, height: 1920))
     }
 }
+
+struct EnhanceTests {
+    /// Gray picture with fresh random noise every frame, like tape noise.
+    static func noisyClip(in dir: URL, seconds: Int = 2) async throws -> URL {
+        try await TestVideo.make(
+            in: dir, name: "noisy", seconds: seconds, size: CGSize(width: 720, height: 480), codec: .proRes422,
+            transform: PictureShapeTests.squeeze
+        ) { frame, pixels in
+            var rng = SystemRandomNumberGenerator()
+            CVPixelBufferLockBaseAddress(pixels, [])
+            let base = CVPixelBufferGetBaseAddress(pixels)!.assumingMemoryBound(to: UInt8.self)
+            let stride = CVPixelBufferGetBytesPerRow(pixels)
+            for y in 0..<CVPixelBufferGetHeight(pixels) {
+                for x in 0..<CVPixelBufferGetWidth(pixels) {
+                    let value = UInt8(clamping: 128 + Int.random(in: -40...40, using: &rng))
+                    let p = base + y * stride + x * 4
+                    p[0] = value; p[1] = value; p[2] = value; p[3] = 255
+                }
+            }
+            CVPixelBufferUnlockBaseAddress(pixels, [])
+        }
+    }
+
+    /// Mean and standard deviation of brightness in the middle of a frame.
+    static func stats(_ url: URL, at seconds: Double) async throws -> (mean: Double, deviation: Double, size: CGSize) {
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+        generator.requestedTimeToleranceBefore = .zero
+        generator.requestedTimeToleranceAfter = .zero
+        generator.appliesPreferredTrackTransform = true
+        let image = try await generator.image(at: CMTime(seconds: seconds, preferredTimescale: 600)).image
+        let size = CGSize(width: image.width, height: image.height)
+        let side = 128
+        var bytes = [UInt8](repeating: 0, count: side * side)
+        let context = CGContext(data: &bytes, width: side, height: side, bitsPerComponent: 8, bytesPerRow: side,
+                                space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue)!
+        // Sample a 1:1 crop from the center so noise isn't averaged away by scaling.
+        let crop = image.cropping(to: CGRect(x: image.width / 2 - side / 2, y: image.height / 2 - side / 2, width: side, height: side))!
+        context.draw(crop, in: CGRect(x: 0, y: 0, width: side, height: side))
+        let values = bytes.map(Double.init)
+        let mean = values.reduce(0, +) / Double(values.count)
+        let variance = values.map { ($0 - mean) * ($0 - mean) }.reduce(0, +) / Double(values.count)
+        return (mean, variance.squareRoot(), size)
+    }
+
+    static func export(_ url: URL, _ settings: EnhanceSettings, to dir: URL, name: String) async throws -> ExportJob {
+        let playable = try await Enhancer.makePlayable(url: url, settings: settings)
+        let manager = ExportManager()
+        let job = try #require(manager.export(asset: playable.asset, videoComposition: playable.videoComposition,
+                                              name: name, format: .proRes, folder: dir))
+        await job.task?.value
+        return job
+    }
+
+    @Test func reduceNoiseLowersNoiseAndKeepsBrightness() async throws {
+        #expect(Enhancer.canReduceNoise)
+        let dir = try TestVideo.tempDirectory()
+        let source = try await Self.noisyClip(in: dir)
+        let started = Date()
+        let job = try await Self.export(source, EnhanceSettings(denoiseStrength: 1), to: dir, name: "denoised")
+        let elapsed = Date().timeIntervalSince(started)
+        #expect(job.state == .finished, "\(job.state)")
+
+        let before = try await Self.stats(source, at: 1)
+        let after = try await Self.stats(job.outputURL, at: 1)
+        print("Denoise: noise \(before.deviation) → \(after.deviation), brightness \(before.mean) → \(after.mean), size \(after.size), \(elapsed)s for 60 frames")
+        #expect(after.size == CGSize(width: 640, height: 480))
+        #expect(after.deviation < before.deviation * 0.8)
+        #expect(abs(after.mean - before.mean) < 6)
+        let duration = try await AVURLAsset(url: job.outputURL).load(.duration).seconds
+        #expect(abs(duration - 2) < 0.1)
+    }
+
+    @Test func allEffectsTogetherDoubleSizeAndFrameRate() async throws {
+        let display = CGSize(width: 640, height: 480)
+        try #require(Enhancer.canUpscale(.fast, displaySize: display))
+        let dir = try TestVideo.tempDirectory()
+        let source = try await Self.noisyClip(in: dir, seconds: 1)
+        let settings = EnhanceSettings(fieldOrder: .bottomFirst, denoiseStrength: 0.6, upscale: .fast, sharpen: 0.3)
+        let started = Date()
+        let job = try await Self.export(source, settings, to: dir, name: "all")
+        let elapsed = Date().timeIntervalSince(started)
+        #expect(job.state == .finished, "\(job.state)")
+
+        let after = try await Self.stats(job.outputURL, at: 0.5)
+        print("All effects: size \(after.size), brightness \(after.mean), \(elapsed)s for 60 output frames")
+        #expect(after.size == CGSize(width: 1280, height: 960))
+        let track = try #require(try await AVURLAsset(url: job.outputURL).loadTracks(withMediaType: .video).first)
+        #expect(abs(try await track.load(.nominalFrameRate) - 60) < 1)
+        let before = try await Self.stats(source, at: 0.5)
+        #expect(abs(after.mean - before.mean) < 8)
+    }
+
+    @Test(arguments: [
+        ("deinterlace", EnhanceSettings(fieldOrder: .bottomFirst)),
+        ("upscale 2x", EnhanceSettings(upscale: .fast)),
+        ("sharpen", EnhanceSettings(sharpen: 0.3)),
+    ])
+    func stageSpeed(name: String, settings: EnhanceSettings) async throws {
+        let dir = try TestVideo.tempDirectory()
+        let source = try await Self.noisyClip(in: dir, seconds: 1)
+        let started = Date()
+        let job = try await Self.export(source, settings, to: dir, name: "stage")
+        print("Stage \(name): \(Date().timeIntervalSince(started))s, \(job.state)")
+        #expect(job.state == .finished)
+    }
+
+    @Test func bestNeedsModelOrWorks() async throws {
+        // The 4× model is a one-time download; without it the export explains what to do.
+        let dir = try TestVideo.tempDirectory()
+        let source = try await Self.noisyClip(in: dir, seconds: 1)
+        let ready = Enhancer.bestScalerConfiguration(width: 640, height: 480)?.configurationModelStatus == .ready
+        let job = try await Self.export(source, EnhanceSettings(upscale: .best), to: dir, name: "best")
+        if ready {
+            #expect(job.state == .finished)
+            #expect(try await Self.stats(job.outputURL, at: 0.5).size == CGSize(width: 2560, height: 1920))
+        } else {
+            guard case .failed = job.state else { Issue.record("Expected a clear failure without the model"); return }
+        }
+    }
+}
+
+struct BobSpeedTests {
+    @Test func bobSpeed() throws {
+        var source: CVPixelBuffer?, output: CVPixelBuffer?
+        CVPixelBufferCreate(nil, 720, 480, kCVPixelFormatType_32BGRA, nil, &source)
+        CVPixelBufferCreate(nil, 720, 480, kCVPixelFormatType_32BGRA, nil, &output)
+        let started = Date()
+        for i in 0..<60 { Deinterlacer.bob(source!, into: output!, keepOddRows: i.isMultiple(of: 2)) }
+        print("Bob: \(Date().timeIntervalSince(started) / 60 * 1000) ms per field")
+    }
+}
+
+struct EffectsPreviewTests {
+    @Test func previewRebuildsWithEffects() async throws {
+        let dir = try TestVideo.tempDirectory()
+        let url = try await EnhanceTests.noisyClip(in: dir, seconds: 1)
+        let clip = Clip(url: url)
+        await MediaLoader.load(clip)
+        #expect(clip.canEnhance)
+
+        let controller = ClipPlayerController()
+        controller.load(clip)
+        clip.denoise = true
+        clip.upscale = .fast
+        clip.sharpen = 0.2
+        await controller.applyEffects()
+        #expect(clip.effectsError == nil)
+        #expect(controller.player.currentItem?.videoComposition?.renderSize == CGSize(width: 1280, height: 960))
+        #expect(clip.outputSize == CGSize(width: 1280, height: 960))
+        #expect(clip.exportNameSuffix == "Enhanced")
+
+        clip.denoise = false
+        clip.upscale = .off
+        clip.sharpen = 0
+        await controller.applyEffects()
+        #expect(controller.player.currentItem?.videoComposition == nil)
+    }
+
+    @Test func windowWithAllEffectsSettles() async throws {
+        let dir = try TestVideo.tempDirectory()
+        let url = try await EnhanceTests.noisyClip(in: dir, seconds: 2)
+        let store = ProjectStore(exporter: ExportManager())
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1200, height: 760),
+                              styleMask: [.titled, .resizable, .closable], backing: .buffered, defer: false)
+        window.contentView = NSHostingView(rootView: ContentView().environment(store).environment(store.exporter))
+        window.orderFront(nil)
+        defer { window.orderOut(nil) }
+
+        store.importAndSelect([url])
+        let clip = try #require(store.selectedClips.first)
+        for _ in 0..<20 {
+            try await Task.sleep(for: .milliseconds(50))
+            window.displayIfNeeded()
+        }
+        clip.deinterlace = true
+        clip.denoise = true
+        clip.upscale = .fast
+        clip.sharpen = 0.3
+        for _ in 0..<30 {
+            try await Task.sleep(for: .milliseconds(50))
+            window.displayIfNeeded()
+        }
+        #expect(clip.effectsError == nil)
+    }
+}

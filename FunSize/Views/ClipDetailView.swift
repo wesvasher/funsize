@@ -32,8 +32,11 @@ struct ClipDetailView: View {
         .onChange(of: clip.id, initial: true) {
             controller.load(clip)
         }
-        .task(id: DeinterlaceSetting(clip: clip)) {
-            await controller.updateVideoComposition()
+        .task(id: EffectsKey(id: clip.id, settings: clip.enhanceSettings)) {
+            // Wait a moment so dragging a slider doesn't rebuild the preview on every tick.
+            try? await Task.sleep(for: .milliseconds(200))
+            guard !Task.isCancelled else { return }
+            await controller.applyEffects()
         }
         .inspector(isPresented: $isShowingInspector) {
             ClipInspectorView(clip: clip)
@@ -56,17 +59,10 @@ struct ClipDetailView: View {
     }
 }
 
-/// Changes whenever the preview needs a new deinterlace setup.
-private struct DeinterlaceSetting: Hashable {
+/// Changes whenever the preview needs rebuilding with different effects.
+private struct EffectsKey: Hashable {
     let id: UUID
-    let on: Bool
-    let fieldOrder: FieldOrder
-
-    init(clip: Clip) {
-        id = clip.id
-        on = clip.isDeinterlacing
-        fieldOrder = clip.fieldOrder
-    }
+    let settings: EnhanceSettings
 }
 
 /// Always-visible controls under the clip: scrubber, timecode, frame counter, and in/out.

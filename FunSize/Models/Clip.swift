@@ -61,6 +61,44 @@ final class Clip: Identifiable {
     /// Frame rate of what plays and exports: doubled when deinterlacing.
     var outputFrameRate: Float { isDeinterlacing ? frameRate * 2 : frameRate }
 
+    // MARK: Enhancement
+
+    var denoise = false
+    var denoiseStrength = 0.5
+    var upscale: UpscaleMode = .off
+    /// 0 is off.
+    var sharpen = 0.0
+    /// Rotated (e.g. portrait phone) video; enhancement effects don't handle rotation yet.
+    var isRotated = false
+    /// Why the preview couldn't apply the effects, if it couldn't.
+    var effectsError: String?
+
+    var canEnhance: Bool { hasVideo && !isRotated && displaySize.width >= 160 && displaySize.height >= 96 }
+
+    /// Everything the preview and exports should apply, in processing order.
+    var enhanceSettings: EnhanceSettings {
+        EnhanceSettings(
+            fieldOrder: isDeinterlacing ? fieldOrder : nil,
+            denoiseStrength: canEnhance && denoise ? Float(denoiseStrength) : nil,
+            upscale: canEnhance ? upscale : .off,
+            sharpen: canEnhance ? Float(sharpen) : 0
+        )
+    }
+
+    /// Picture size after effects (upscaling makes it bigger).
+    var outputSize: CGSize {
+        enhanceSettings.upscale == .off ? displaySize : Enhancer.outputSize(displaySize: displaySize, upscale: upscale)
+    }
+
+    /// Added to exported file names, e.g. "60p Enhanced".
+    var exportNameSuffix: String {
+        let settings = enhanceSettings
+        var parts: [String] = []
+        if settings.fieldOrder != nil { parts.append(deinterlacedRateLabel) }
+        if settings.denoiseStrength != nil || settings.upscale != .off || settings.sharpen > 0 { parts.append("Enhanced") }
+        return parts.joined(separator: " ")
+    }
+
     /// "60p" for 29.97 fps interlaced video, "50p" for PAL.
     var deinterlacedRateLabel: String { "\(Int((frameRate * 2).rounded()))p" }
 

@@ -73,7 +73,7 @@ struct ClipInspectorView: View {
                     InspectorLabel("Deinterlace")
                     Toggle("To \(clip.deinterlacedRateLabel)", isOn: $clip.deinterlace)
                         .toggleStyle(.switch)
-                        .help("Turns each field into its own frame (\(String(format: "%.4g", clip.frameRate * 2))i → \(clip.deinterlacedRateLabel)). Applies to the preview and exports.")
+                        .help("Turns each field into its own frame (\(String(format: "%.4g", clip.frameRate * 2))i → \(clip.deinterlacedRateLabel)).")
                 }
                 if clip.deinterlace {
                     GridRow {
@@ -90,10 +90,83 @@ struct ClipInspectorView: View {
                         .help("Switch this if motion looks jittery or steps backward.")
                     }
                 }
-            } else {
+            }
+
+            if clip.canEnhance {
                 GridRow {
-                    Text("None available for this clip")
+                    InspectorLabel("Reduce Noise")
+                    Toggle("On", isOn: $clip.denoise)
+                        .toggleStyle(.switch)
+                        .disabled(!Enhancer.canReduceNoise)
+                        .help("Removes tape noise and grain by comparing each frame with its neighbors.")
+                }
+                if clip.denoise {
+                    GridRow {
+                        InspectorLabel("Strength")
+                        HStack(spacing: 6) {
+                            Slider(value: $clip.denoiseStrength, in: 0.1...1)
+                            Text("\(Int((clip.denoiseStrength * 100).rounded()))%")
+                                .monospacedDigit()
+                                .frame(width: 34, alignment: .trailing)
+                        }
+                    }
+                }
+
+                GridRow {
+                    InspectorLabel("Enhance")
+                    Picker("Enhance", selection: $clip.upscale) {
+                        ForEach(UpscaleMode.allCases) { mode in
+                            Text(mode.title)
+                                .tag(mode)
+                                .selectionDisabled(!Enhancer.canUpscale(mode, displaySize: clip.displaySize))
+                        }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                    .help("Increases resolution with Apple's machine-learning video scaler.")
+                }
+                if clip.upscale != .off {
+                    InspectorRow("Output", dimensions(clip.outputSize))
+                }
+                if clip.upscale == .best {
+                    GridRow {
+                        Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
+                        ModelStatusView(size: clip.displaySize)
+                    }
+                }
+
+                GridRow {
+                    InspectorLabel("Sharpen")
+                    HStack(spacing: 6) {
+                        Slider(value: $clip.sharpen, in: 0...1)
+                        Text(clip.sharpen < 0.01 ? "Off" : "\(Int((clip.sharpen * 100).rounded()))%")
+                            .monospacedDigit()
+                            .frame(width: 34, alignment: .trailing)
+                    }
+                    .help("A light final sharpen. Too much makes tape noise stand out.")
+                }
+            } else if !clip.canDeinterlace {
+                GridRow {
+                    Text(clip.isRotated ? "Not available for rotated video yet" : "None available for this clip")
                         .foregroundStyle(.secondary)
+                        .gridCellColumns(2)
+                }
+            }
+
+            if let error = clip.effectsError {
+                GridRow {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                        .gridCellColumns(2)
+                }
+            }
+
+            if clip.enhanceSettings.isActive {
+                GridRow {
+                    Text("Shown in the preview and used for exports of this clip. The timeline uses the original.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                         .gridCellColumns(2)
                 }
             }
@@ -134,6 +207,42 @@ struct ClipInspectorView: View {
         case 8: "7.1 Surround"
         default: "\(count) channels"
         }
+    }
+}
+
+/// Download state for the 4× model, with a button to fetch it.
+private struct ModelStatusView: View {
+    let size: CGSize
+    private var model: SuperResolutionModel { .shared }
+
+    var body: some View {
+        Group {
+            switch model.status {
+            case .unknown:
+                ProgressView().controlSize(.mini)
+            case .unsupported:
+                Text("Not supported on this Mac").foregroundStyle(.secondary)
+            case .needsDownload:
+                VStack(alignment: .leading, spacing: 2) {
+                    Button("Download Model") { model.download(for: size) }
+                    Text("One-time download from Apple").font(.caption2).foregroundStyle(.secondary)
+                }
+            case .downloading(let progress):
+                VStack(alignment: .leading, spacing: 2) {
+                    ProgressView(value: progress)
+                    Text("Downloading… \(Int(progress * 100))%").font(.caption2).foregroundStyle(.secondary)
+                }
+            case .ready:
+                Label("Model ready", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+            case .failed(let message):
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(message).foregroundStyle(.red).lineLimit(2)
+                    Button("Try Again") { model.download(for: size) }
+                }
+            }
+        }
+        .onAppear { model.refresh(for: size) }
     }
 }
 

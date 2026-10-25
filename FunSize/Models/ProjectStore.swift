@@ -195,16 +195,22 @@ final class ProjectStore {
                 end: CMTime(seconds: range.upperBound, preferredTimescale: 90_000)
             )
         }
-        let asset = AVURLAsset(url: clip.url)
-        guard clip.isDeinterlacing, !format.isAudioOnly else {
-            exporter.export(asset: asset, timeRange: timeRange, name: clip.name, format: format)
+        let settings = clip.enhanceSettings
+        guard settings.isActive, !format.isAudioOnly else {
+            exporter.export(asset: AVURLAsset(url: clip.url), timeRange: timeRange, name: clip.name, format: format)
             return
         }
-        let name = "\(clip.name) \(clip.deinterlacedRateLabel)"
-        let fieldOrder = clip.fieldOrder
+        let name = "\(clip.name) \(clip.exportNameSuffix)"
+        let url = clip.url
         Task {
-            let composition = try? await Deinterlacer.videoComposition(for: asset, fieldOrder: fieldOrder)
-            exporter.export(asset: asset, videoComposition: composition, timeRange: timeRange, name: name, format: format)
+            do {
+                let playable = try await Enhancer.makePlayable(url: url, settings: settings)
+                exporter.export(asset: playable.asset, videoComposition: playable.videoComposition,
+                                timeRange: timeRange, name: name, format: format)
+            } catch {
+                exporter.jobs.insert(failedJob(error, name: name, format: format), at: 0)
+                exporter.isShowingActivity = true
+            }
         }
     }
 
@@ -221,14 +227,14 @@ final class ProjectStore {
                     format: format
                 )
             } catch {
-                exporter.jobs.insert(failedJob(error, format: format), at: 0)
+                exporter.jobs.insert(failedJob(error, name: "Timeline", format: format), at: 0)
                 exporter.isShowingActivity = true
             }
         }
     }
 
-    private func failedJob(_ error: Error, format: ExportFormat) -> ExportJob {
-        let job = ExportJob(name: "Timeline", format: format, outputURL: exporter.destinationFolder)
+    private func failedJob(_ error: Error, name: String, format: ExportFormat) -> ExportJob {
+        let job = ExportJob(name: name, format: format, outputURL: exporter.destinationFolder.appending(path: name))
         job.state = .failed(error.localizedDescription)
         return job
     }

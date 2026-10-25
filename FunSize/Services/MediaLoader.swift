@@ -22,6 +22,7 @@ enum MediaLoader {
                 let geometry = try await VideoGeometry.load(track)
                 clip.displaySize = geometry.displaySize
                 clip.encodedSize = geometry.encodedSize
+                clip.isRotated = geometry.transform.b != 0 || geometry.transform.c != 0
                 clip.frameRate = fps
                 if let format = formats.first {
                     (clip.isInterlaced, clip.detectedFieldOrder) = Deinterlacer.detect(format)
