@@ -34,6 +34,7 @@ private struct TimelinePreview: View {
     @Environment(ProjectStore.self) private var store
     @State private var player = AVPlayer()
     @State private var buildError: String?
+    @State private var sourceID = UUID()
 
     var body: some View {
         ZStack {
@@ -55,7 +56,29 @@ private struct TimelinePreview: View {
         .task(id: store.timelineSignature) {
             await rebuild()
         }
-        .onDisappear { player.pause() }
+        .onChange(of: store.timeline.isEmpty, initial: true) { _, isEmpty in
+            if isEmpty {
+                store.clearFullScreenSource(owner: sourceID)
+            } else {
+                let player = player
+                store.setFullScreenSource(.init(owner: sourceID) {
+                    FullScreenPlayer.present(player: player, title: "Timeline") {
+                        // Start over if it's at the end.
+                        if let item = player.currentItem, item.duration.isNumeric,
+                           player.currentTime().seconds >= item.duration.seconds - 0.05 {
+                            player.seek(to: .zero)
+                        }
+                        player.play()
+                    } onClose: {
+                        player.pause()
+                    }
+                })
+            }
+        }
+        .onDisappear {
+            player.pause()
+            store.clearFullScreenSource(owner: sourceID)
+        }
     }
 
     private func rebuild() async {

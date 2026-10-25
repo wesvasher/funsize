@@ -1,28 +1,60 @@
 import SwiftUI
 
-/// The Export menu (two clicks: open it, pick a format) and the exports progress button.
+/// The Play Full Screen button and the Export menu (two clicks: open it, pick a format).
 struct ExportToolbar: ToolbarContent {
     @Environment(ProjectStore.self) private var store
     @Environment(ExportManager.self) private var exporter
 
     var body: some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
-            ExportActivityButton()
+            // ⇧⌘F lives on View › Play Full Screen, which works wherever the focus is.
+            Button("Play Full Screen", systemImage: "play.rectangle") { store.playFullScreen() }
+                .disabled(store.fullScreenSource == nil)
+                .help(store.isTimelineSelected ? "Play the timeline full screen (⇧⌘F)" : "Play the clip full screen (⇧⌘F)")
         }
         ToolbarItem(placement: .primaryAction) {
-            Menu {
-                ExportPresetMenuItems { preset in store.exportSelection(as: preset) }
-                Divider()
-                if let folder = shownFolder {
-                    Button("Show Export Folder", systemImage: "folder") { NSWorkspace.shared.open(folder) }
-                }
-                Button("Export Settings…", systemImage: "gearshape") { store.openExportSettings?() }
-            } label: {
-                Label("Export", systemImage: "square.and.arrow.up")
+            ExportMenu()
+        }
+    }
+}
+
+/// The Export menu. Export progress pops up from it while exports run.
+private struct ExportMenu: View {
+    @Environment(ProjectStore.self) private var store
+    @Environment(ExportManager.self) private var exporter
+
+    var body: some View {
+        @Bindable var exporter = exporter
+
+        Menu {
+            ExportPresetMenuItems { preset in store.exportSelection(as: preset) }
+                .disabled(!store.canExport)
+            Divider()
+            if let folder = shownFolder {
+                Button("Show Export Folder", systemImage: "folder") { NSWorkspace.shared.open(folder) }
             }
-            .menuIndicator(.hidden)
-            .disabled(!store.canExport)
-            .help(store.isTimelineSelected ? "Export the timeline" : "Export the selected clips")
+            Button("Show Exports…", systemImage: "arrow.down.circle") { exporter.isShowingActivity = true }
+                .disabled(exporter.jobs.isEmpty)
+            Button("Export Settings…", systemImage: "gearshape") { store.openExportSettings?() }
+        } label: {
+            if exporter.runningJobs.isEmpty {
+                Label("Export", systemImage: "square.and.arrow.up")
+            } else {
+                // Shows progress while exporting.
+                Label {
+                    Text("Export")
+                } icon: {
+                    ProgressView(value: exporter.overallProgress)
+                        .progressViewStyle(.circular)
+                        .controlSize(.small)
+                }
+            }
+        }
+        .menuIndicator(.hidden)
+        .disabled(!store.canExport && exporter.jobs.isEmpty)
+        .help(store.isTimelineSelected ? "Export the timeline" : "Export the selected clips")
+        .popover(isPresented: $exporter.isShowingActivity, arrowEdge: .bottom) {
+            ExportActivityView()
         }
     }
 
@@ -58,31 +90,6 @@ struct ExportPresetMenuItems: View {
     private func buttons(_ presets: [ExportPreset]) -> some View {
         ForEach(presets) { preset in
             Button(preset.name, systemImage: preset.systemImage) { action(preset) }
-        }
-    }
-}
-
-private struct ExportActivityButton: View {
-    @Environment(ExportManager.self) private var exporter
-
-    var body: some View {
-        @Bindable var exporter = exporter
-
-        Button {
-            exporter.isShowingActivity.toggle()
-        } label: {
-            if exporter.runningJobs.isEmpty {
-                Label("Exports", systemImage: "arrow.down.circle")
-            } else {
-                ProgressView(value: exporter.overallProgress)
-                    .progressViewStyle(.circular)
-                    .controlSize(.small)
-            }
-        }
-        .help("Show exports")
-        .disabled(exporter.jobs.isEmpty)
-        .popover(isPresented: $exporter.isShowingActivity, arrowEdge: .bottom) {
-            ExportActivityView()
         }
     }
 }

@@ -39,6 +39,12 @@ struct ProjectCommands: Commands {
     @FocusedValue(ProjectStore.self) private var store
 
     var body: some Commands {
+        CommandGroup(after: .sidebar) {
+            Button("Play Full Screen") { store?.playFullScreen() }
+                .keyboardShortcut("f", modifiers: [.command, .shift])
+                .disabled(store?.fullScreenSource == nil)
+            Divider()
+        }
         CommandGroup(replacing: .importExport) {
             Button("Import Videos…") { store?.isImporting = true }
                 .keyboardShortcut("i", modifiers: [.command, .shift])

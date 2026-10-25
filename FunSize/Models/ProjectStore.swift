@@ -307,6 +307,29 @@ final class ProjectStore {
         }
     }
 
+    // MARK: Full-screen playback
+
+    /// What the Play Full Screen button plays: set by the clip or timeline view on screen.
+    struct FullScreenSource {
+        let owner: UUID
+        let present: () -> Void
+    }
+
+    private(set) var fullScreenSource: FullScreenSource?
+
+    func setFullScreenSource(_ source: FullScreenSource) {
+        fullScreenSource = source
+    }
+
+    /// Clears the source only if `owner` set it (the next view may already have set its own).
+    func clearFullScreenSource(owner: UUID) {
+        if fullScreenSource?.owner == owner { fullScreenSource = nil }
+    }
+
+    func playFullScreen() {
+        fullScreenSource?.present()
+    }
+
     // MARK: Where exports go
 
     /// The saved project file, or `nil` if it hasn't been saved yet.

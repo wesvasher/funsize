@@ -5,6 +5,8 @@ struct ClipDetailView: View {
     let clip: Clip
     @State private var controller = ClipPlayerController()
     @State private var keyMonitor = PlaybackKeyMonitor()
+    /// Identifies this view as the full-screen source.
+    @State private var sourceID = UUID()
     @AppStorage("showClipInspector") private var isShowingInspector = true
 
     var body: some View {
@@ -42,6 +44,14 @@ struct ClipDetailView: View {
         .focusedSceneValue(\.clipPlayer, controller)
         .onChange(of: clip.id, initial: true) {
             controller.load(clip)
+            let controller = controller, clip = clip
+            store.setFullScreenSource(.init(owner: sourceID) {
+                FullScreenPlayer.present(player: controller.player, title: clip.name) {
+                    controller.play()
+                } onClose: {
+                    controller.pause()
+                }
+            })
         }
         .onChange(of: clip.showCaptions) {
             Task { await controller.updateCaptions() }
@@ -69,6 +79,7 @@ struct ClipDetailView: View {
         .onDisappear {
             keyMonitor.stop()
             controller.pause()
+            store.clearFullScreenSource(owner: sourceID)
         }
     }
 }
@@ -376,7 +387,9 @@ final class PlaybackKeyMonitor {
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak controller] event in
             let handled = MainActor.assumeIsolated {
                 // Only in the main window, and never while typing in a text field.
+                // The full-screen player handles its own keys.
                 guard let controller, let window = event.window, window == NSApp.mainWindow,
+                      window.identifier != FullScreenPlayer.windowID,
                       !(window.firstResponder is NSText) else { return false }
                 return Self.perform(event, on: controller)
             }

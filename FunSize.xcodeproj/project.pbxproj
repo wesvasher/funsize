@@ -35,6 +35,7 @@
 		9D3D28EE07F5737FB7604092 /* PlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9166EF3510B260CAA486983A /* PlayerView.swift */; };
 		A260224BF4FA233E101EB31D /* ExportToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D33E36EAC0683EB9A11F58C /* ExportToolbar.swift */; };
 		B3560DB5809D2413A6EC5204 /* ClipPlayerController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EC7518137FCBF656A3159D6 /* ClipPlayerController.swift */; };
+		BA4A1512E38FAE108C835768 /* FullScreenPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E76B745797FFDB65CCF424C0 /* FullScreenPlayer.swift */; };
 		BCE132D50B25772745457397 /* ClipInspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A05B9E294378093DEE90249 /* ClipInspectorView.swift */; };
 		DAA3592212CE32630705B6DF /* ExportPresetEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BD4B8E32FD3ECAA869E6DB0 /* ExportPresetEditor.swift */; };
 		DD485EBBC391164A3F98A6BD /* FrameClock.swift in Sources */ = {isa = PBXBuildFile; fileRef = C68CC0E4CF9DA8193CE595A7 /* FrameClock.swift */; };
@@ -94,6 +95,7 @@
 		CB4DD8807247B8B5A52F3CDB /* ClipDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipDetailView.swift; sourceTree = "<group>"; };
 		CD0432B6B749B8DDAF905877 /* Deinterlacer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Deinterlacer.swift; sourceTree = "<group>"; };
 		DE625BBFB11AECFAC072A9C5 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
+		E76B745797FFDB65CCF424C0 /* FullScreenPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullScreenPlayer.swift; sourceTree = "<group>"; };
 		E8409E81CC74F9D7773527F6 /* ExportPresetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportPresetTests.swift; sourceTree = "<group>"; };
 		EC36977A67B9BC9DBE6F7250 /* TimelineDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineDetailView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -125,6 +127,7 @@
 				8BD4B8E32FD3ECAA869E6DB0 /* ExportPresetEditor.swift */,
 				5341E315744E495CB25A9D7E /* ExportPresetsSettingsView.swift */,
 				2D33E36EAC0683EB9A11F58C /* ExportToolbar.swift */,
+				E76B745797FFDB65CCF424C0 /* FullScreenPlayer.swift */,
 				9166EF3510B260CAA486983A /* PlayerView.swift */,
 				A41A516C059DC2D2A3903CC3 /* ProjectWindow.swift */,
 				A06CD73C7FCAE863B633825C /* SettingsView.swift */,
@@ -308,6 +311,7 @@
 				0BEC74C6486173A5B1AA9322 /* ExportPresetsSettingsView.swift in Sources */,
 				A260224BF4FA233E101EB31D /* ExportToolbar.swift in Sources */,
 				DD485EBBC391164A3F98A6BD /* FrameClock.swift in Sources */,
+				BA4A1512E38FAE108C835768 /* FullScreenPlayer.swift in Sources */,
 				0E5034E8A26E5F3B44F6DB85 /* FunSizeApp.swift in Sources */,
 				2CABDE1F94EA7880F2FEF2A2 /* MediaLoader.swift in Sources */,
 				9D3D28EE07F5737FB7604092 /* PlayerView.swift in Sources */,
