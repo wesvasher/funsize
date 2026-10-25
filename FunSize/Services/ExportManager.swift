@@ -114,6 +114,7 @@ final class ExportManager {
     func export(
         asset: AVAsset,
         videoComposition: AVVideoComposition? = nil,
+        timeRange: CMTimeRange? = nil,
         name: String,
         format: ExportFormat,
         folder: URL? = nil
@@ -141,6 +142,9 @@ final class ExportManager {
         }
         if !format.isAudioOnly {
             session.videoComposition = videoComposition
+        }
+        if let timeRange {
+            session.timeRange = timeRange
         }
 
         let progressTask = Task {

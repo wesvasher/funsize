@@ -20,6 +20,7 @@ struct FunSizeApp: App {
         }
         .defaultSize(width: 1200, height: 760)
         .commands {
+            PlaybackCommands()
             CommandGroup(replacing: .newItem) {
                 Button("Import Videos…") { store.isImporting = true }
                     .keyboardShortcut("o")

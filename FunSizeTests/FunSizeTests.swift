@@ -154,3 +154,58 @@ struct PlayerViewTests {
         try await Task.sleep(for: .milliseconds(300))
     }
 }
+
+struct InOutTests {
+    @Test func timecodeAndFrameNumbers() {
+        let clock = FrameClock(fps: 24)
+        #expect(clock.timecode(frames: 0) == "00:00:00")
+        #expect(clock.timecode(frames: 24 * 75 + 5) == "01:15:05")
+        #expect(clock.timecode(frames: 24 * 3600) == "1:00:00:00")
+        #expect(clock.frameIndex(at: 1.0 / 24) == 1)
+        #expect(clock.frameCount(duration: 10) == 240)
+    }
+
+    @Test func markingInAndOut() async throws {
+        let dir = try TestVideo.tempDirectory()
+        let url = try await TestVideo.make(in: dir, name: "clip", seconds: 2, size: CGSize(width: 320, height: 240))
+        let clip = Clip(url: url)
+        await MediaLoader.load(clip)
+        let controller = ClipPlayerController()
+        controller.load(clip)
+
+        controller.currentTime = 0.5
+        #expect(controller.currentFrameNumber == 16)  // 30 fps: frame 16 starts at 0.5s
+        controller.markIn()
+        controller.currentTime = 1.0
+        controller.markOut()
+        #expect(clip.inPoint == 0.5)
+        #expect(abs((clip.outPoint ?? 0) - 31.0 / 30) < 0.0001)  // out includes the frame on screen
+
+        // Marking in after the out point clears the out point.
+        controller.currentTime = 1.5
+        controller.markIn()
+        #expect(clip.outPoint == nil)
+    }
+
+    @Test func exportUsesMarkedRange() async throws {
+        let dir = try TestVideo.tempDirectory()
+        let url = try await TestVideo.make(in: dir, name: "clip", seconds: 3, size: CGSize(width: 320, height: 240))
+        let store = ProjectStore(exporter: ExportManager())
+        let clip = try #require(store.importFiles([url]).first)
+        await MediaLoader.load(clip)
+        clip.inPoint = 1
+        clip.outPoint = 2
+
+        store.addToTimeline([clip])
+        #expect(store.timelineDuration == 1)
+
+        let job = try #require(store.exporter.export(
+            asset: AVURLAsset(url: url),
+            timeRange: CMTimeRange(start: CMTime(seconds: 1, preferredTimescale: 600), end: CMTime(seconds: 2, preferredTimescale: 600)),
+            name: "clip", format: .mp4, folder: dir
+        ))
+        await job.task?.value
+        let duration = try await AVURLAsset(url: job.outputURL).load(.duration).seconds
+        #expect(abs(duration - 1) < 0.1)
+    }
+}

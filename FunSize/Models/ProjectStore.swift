@@ -95,7 +95,7 @@ final class ProjectStore {
     // MARK: Timeline editing
 
     func addToTimeline(_ clips: [Clip], at index: Int? = nil) {
-        let items = clips.map { TimelineItem(clipID: $0.id) }
+        let items = clips.map { TimelineItem(clipID: $0.id, trimStart: $0.inPoint ?? 0, trimEnd: $0.outPoint) }
         let insertAt = min(index ?? timeline.count, timeline.count)
         timeline.insert(contentsOf: items, at: insertAt)
         selectedTimelineItemID = items.last?.id
@@ -185,8 +185,17 @@ final class ProjectStore {
         }
     }
 
+    /// Exports a clip, or just its in/out range when one is marked.
     func exportClip(_ clip: Clip, as format: ExportFormat) {
-        exporter.export(asset: AVURLAsset(url: clip.url), name: clip.name, format: format)
+        var timeRange: CMTimeRange?
+        if clip.hasMarks {
+            let range = clip.markedRange
+            timeRange = CMTimeRange(
+                start: CMTime(seconds: range.lowerBound, preferredTimescale: 90_000),
+                end: CMTime(seconds: range.upperBound, preferredTimescale: 90_000)
+            )
+        }
+        exporter.export(asset: AVURLAsset(url: clip.url), timeRange: timeRange, name: clip.name, format: format)
     }
 
     func exportTimeline(as format: ExportFormat) {

@@ -24,12 +24,24 @@ final class Clip: Identifiable {
     var isLoaded = false
     var loadError: String?
 
+    /// Marked range in seconds. `nil` means the start (in) or end (out) of the clip.
+    var inPoint: Double?
+    var outPoint: Double?
+
     init(url: URL) {
         self.url = url
         self.name = url.deletingPathExtension().lastPathComponent
     }
 
     var poster: CGImage? { thumbnails.first?.image }
+
+    var hasMarks: Bool { inPoint != nil || outPoint != nil }
+
+    /// The part of the clip that exports and goes onto the timeline.
+    var markedRange: ClosedRange<Double> {
+        let start = inPoint ?? 0
+        return start...max(start, outPoint ?? duration)
+    }
 
     /// Closest thumbnail to a given time, used to draw filmstrips.
     func thumbnail(near time: Double) -> CGImage? {
@@ -40,6 +52,9 @@ final class Clip: Identifiable {
         var parts = [duration.timecode]
         if hasVideo, displaySize != .zero {
             parts.append("\(Int(displaySize.width))×\(Int(displaySize.height))")
+        }
+        if hasVideo, frameRate > 0 {
+            parts.append(String(format: "%.3g fps", frameRate))
         }
         return parts.joined(separator: " · ")
     }

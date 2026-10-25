@@ -103,6 +103,8 @@ struct ClipRow: View {
                 Group {
                     if let error = clip.loadError {
                         Label(error, systemImage: "exclamationmark.triangle")
+                    } else if clip.isLoaded && clip.hasMarks {
+                        Label("Marked \((clip.markedRange.upperBound - clip.markedRange.lowerBound).timecode) of \(clip.duration.timecode)", systemImage: "scissors")
                     } else if clip.isLoaded {
                         Text(clip.summary)
                     } else {

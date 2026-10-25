@@ -21,6 +21,8 @@
 		8B6AA344B0CB5AEE84CAB8FA /* ClipDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB4DD8807247B8B5A52F3CDB /* ClipDetailView.swift */; };
 		9D3D28EE07F5737FB7604092 /* PlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9166EF3510B260CAA486983A /* PlayerView.swift */; };
 		A260224BF4FA233E101EB31D /* ExportToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D33E36EAC0683EB9A11F58C /* ExportToolbar.swift */; };
+		B3560DB5809D2413A6EC5204 /* ClipPlayerController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EC7518137FCBF656A3159D6 /* ClipPlayerController.swift */; };
+		DD485EBBC391164A3F98A6BD /* FrameClock.swift in Sources */ = {isa = PBXBuildFile; fileRef = C68CC0E4CF9DA8193CE595A7 /* FrameClock.swift */; };
 		E6C74FD7DAD27D8E8B56B794 /* ExportFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BB23B5AB67E265BCED52AF1 /* ExportFormat.swift */; };
 		E6E2CD0D93946BACFEF35F4F /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE625BBFB11AECFAC072A9C5 /* SidebarView.swift */; };
 		F2313D2516B6B5FF7B7772D5 /* TimelineEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 728F9B0D9225E79BC57A72F9 /* TimelineEditorView.swift */; };
@@ -49,6 +51,7 @@
 		55C1854074C9685942B9FCDA /* FunSizeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FunSizeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		58695AD125524C438F965970 /* ProjectStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectStore.swift; sourceTree = "<group>"; };
 		728F9B0D9225E79BC57A72F9 /* TimelineEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineEditorView.swift; sourceTree = "<group>"; };
+		7EC7518137FCBF656A3159D6 /* ClipPlayerController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipPlayerController.swift; sourceTree = "<group>"; };
 		8B885416B094F73E88EC9B56 /* FunSize.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FunSize.entitlements; sourceTree = "<group>"; };
 		9166EF3510B260CAA486983A /* PlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerView.swift; sourceTree = "<group>"; };
 		91EEAB40D409F3DA9177CE4E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -56,6 +59,7 @@
 		A06CD73C7FCAE863B633825C /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		AC287DF22BA75C83537AD161 /* TimelineInspectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineInspectorView.swift; sourceTree = "<group>"; };
 		AF604566AA3BB8BCC60A5F56 /* CompositionBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositionBuilder.swift; sourceTree = "<group>"; };
+		C68CC0E4CF9DA8193CE595A7 /* FrameClock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameClock.swift; sourceTree = "<group>"; };
 		CB4DD8807247B8B5A52F3CDB /* ClipDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClipDetailView.swift; sourceTree = "<group>"; };
 		DE625BBFB11AECFAC072A9C5 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
 		EC36977A67B9BC9DBE6F7250 /* TimelineDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineDetailView.swift; sourceTree = "<group>"; };
@@ -96,6 +100,7 @@
 			children = (
 				4D0765D5527B6289E6319418 /* Clip.swift */,
 				1BB23B5AB67E265BCED52AF1 /* ExportFormat.swift */,
+				C68CC0E4CF9DA8193CE595A7 /* FrameClock.swift */,
 				58695AD125524C438F965970 /* ProjectStore.swift */,
 			);
 			path = Models;
@@ -122,6 +127,7 @@
 		994012F3FCBE86B62FFEF3A5 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				7EC7518137FCBF656A3159D6 /* ClipPlayerController.swift */,
 				AF604566AA3BB8BCC60A5F56 /* CompositionBuilder.swift */,
 				058F160D94BA4B6C15A6DC46 /* ExportManager.swift */,
 				3AE75A8DBE4568FA8A01FED4 /* MediaLoader.swift */,
@@ -228,11 +234,13 @@
 			files = (
 				4211809B12D78D91A0146CA3 /* Clip.swift in Sources */,
 				8B6AA344B0CB5AEE84CAB8FA /* ClipDetailView.swift in Sources */,
+				B3560DB5809D2413A6EC5204 /* ClipPlayerController.swift in Sources */,
 				05C443DCAED5110432A9496C /* CompositionBuilder.swift in Sources */,
 				77FEAC945596F29AA6530CED /* ContentView.swift in Sources */,
 				E6C74FD7DAD27D8E8B56B794 /* ExportFormat.swift in Sources */,
 				31BC2E746B84C033485C07FF /* ExportManager.swift in Sources */,
 				A260224BF4FA233E101EB31D /* ExportToolbar.swift in Sources */,
+				DD485EBBC391164A3F98A6BD /* FrameClock.swift in Sources */,
 				0E5034E8A26E5F3B44F6DB85 /* FunSizeApp.swift in Sources */,
 				2CABDE1F94EA7880F2FEF2A2 /* MediaLoader.swift in Sources */,
 				9D3D28EE07F5737FB7604092 /* PlayerView.swift in Sources */,
