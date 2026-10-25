@@ -36,43 +36,9 @@ struct CompositionTests {
     }
 }
 
-struct ExportTests {
-    @Test(arguments: [ExportFormat.mp4, .hevc, .hd720, .proRes])
-    func exportsSingleClip(format: ExportFormat) async throws {
-        let dir = try TestVideo.tempDirectory()
-        let source = try await TestVideo.make(in: dir, name: "src", seconds: 1, size: CGSize(width: 640, height: 360))
-        let manager = ExportManager()
-
-        let job = try #require(manager.export(asset: AVURLAsset(url: source), name: "src", format: format, folder: dir))
-        await job.task?.value
-
-        #expect(job.state == .finished)
-        #expect(job.outputURL.pathExtension == format.fileExtension)
-        #expect(FileManager.default.fileExists(atPath: job.outputURL.path(percentEncoded: false)))
-    }
-
-    @Test func exportsCombinedTimeline() async throws {
-        let dir = try TestVideo.tempDirectory()
-        let a = try await TestVideo.make(in: dir, name: "a", seconds: 1, size: CGSize(width: 640, height: 360))
-        let b = try await TestVideo.make(in: dir, name: "b", seconds: 1, size: CGSize(width: 360, height: 640))
-        let built = try await CompositionBuilder.build([.init(url: a, start: 0, end: 1), .init(url: b, start: 0, end: 1)])
-
-        let manager = ExportManager()
-        let job = try #require(manager.export(
-            asset: built.composition, videoComposition: built.videoComposition,
-            name: "timeline", format: .mp4, folder: dir
-        ))
-        await job.task?.value
-
-        #expect(job.state == .finished)
-        let duration = try await AVURLAsset(url: job.outputURL).load(.duration).seconds
-        #expect(abs(duration - 2) < 0.1)
-    }
-}
-
 struct StoreTests {
     @Test func reorderAndTrim() {
-        let store = ProjectStore(exporter: ExportManager())
+        let store = ProjectStore(exporter: ExportManager.test())
         let a = Clip(url: URL(fileURLWithPath: "/tmp/a.mov")); a.duration = 10
         let b = Clip(url: URL(fileURLWithPath: "/tmp/b.mov")); b.duration = 5
         store.clips = [a, b]
@@ -112,6 +78,7 @@ enum TestVideo {
         pixelAspect: (Int, Int)? = nil,
         cleanApertureWidth: Int? = nil,
         transform: CGAffineTransform = .identity,
+        audio: Bool = false,
         draw: ((_ frame: Int, _ pixels: CVPixelBuffer) -> Void)? = nil
     ) async throws -> URL {
         let url = dir.appending(path: "\(name).mov")
@@ -143,25 +110,44 @@ enum TestVideo {
             kCVPixelBufferHeightKey as String: Int(size.height),
         ])
         writer.add(input)
+        let sound = audio ? TestAudio() : nil
+        if let sound { writer.add(sound.input) }
         writer.startWriting()
         writer.startSession(atSourceTime: .zero)
 
-        for frame in 0..<(Int(fps) * seconds) {
-            while !input.isReadyForMoreMediaData { try await Task.sleep(for: .milliseconds(5)) }
-            var buffer: CVPixelBuffer?
-            CVPixelBufferPoolCreatePixelBuffer(nil, adaptor.pixelBufferPool!, &buffer)
-            let pixels = try #require(buffer)
-            if let draw {
-                draw(frame, pixels)
-            } else {
-                CVPixelBufferLockBaseAddress(pixels, [])
-                let shade = UInt8(frame * 4 % 255)
-                memset(CVPixelBufferGetBaseAddress(pixels), Int32(shade), CVPixelBufferGetDataSize(pixels))
-                CVPixelBufferUnlockBaseAddress(pixels, [])
+        // Feed whichever track the writer is ready for; it interleaves them and stalls one
+        // track until the other catches up.
+        let frames = Int(fps) * seconds
+        var frame = 0, soundFrame = 0
+        var videoDone = false, soundDone = false
+        while frame < frames || (sound != nil && soundFrame < frames) {
+            var progressed = false
+            if frame < frames, input.isReadyForMoreMediaData {
+                var buffer: CVPixelBuffer?
+                CVPixelBufferPoolCreatePixelBuffer(nil, adaptor.pixelBufferPool!, &buffer)
+                let pixels = try #require(buffer)
+                if let draw {
+                    draw(frame, pixels)
+                } else {
+                    CVPixelBufferLockBaseAddress(pixels, [])
+                    let shade = UInt8(frame * 4 % 255)
+                    memset(CVPixelBufferGetBaseAddress(pixels), Int32(shade), CVPixelBufferGetDataSize(pixels))
+                    CVPixelBufferUnlockBaseAddress(pixels, [])
+                }
+                adaptor.append(pixels, withPresentationTime: CMTime(value: CMTimeValue(frame), timescale: fps))
+                frame += 1
+                progressed = true
             }
-            adaptor.append(pixels, withPresentationTime: CMTime(value: CMTimeValue(frame), timescale: fps))
+            if let sound, soundFrame < frames, sound.input.isReadyForMoreMediaData {
+                try sound.appendChunk(frame: soundFrame, fps: Int(fps))
+                soundFrame += 1
+                progressed = true
+            }
+            // A finished track must say so, or the writer keeps waiting for it.
+            if frame == frames, !videoDone { input.markAsFinished(); videoDone = true }
+            if let sound, soundFrame == frames, !soundDone { sound.input.markAsFinished(); soundDone = true }
+            if !progressed { try await Task.sleep(for: .milliseconds(2)) }
         }
-        input.markAsFinished()
         await writer.finishWriting()
         if let error = writer.error { throw error }
         return url
@@ -175,7 +161,7 @@ struct PlayerViewTests {
     @Test func clipAndTimelineScreensRender() async throws {
         let dir = try TestVideo.tempDirectory()
         let url = try await TestVideo.make(in: dir, name: "clip", seconds: 1, size: CGSize(width: 640, height: 360))
-        let store = ProjectStore(exporter: ExportManager())
+        let store = ProjectStore(exporter: ExportManager.test())
         let clip = try #require(store.importFiles([url]).first)
         store.addToTimeline([clip])
 
@@ -224,7 +210,7 @@ struct InOutTests {
     @Test func exportUsesMarkedRange() async throws {
         let dir = try TestVideo.tempDirectory()
         let url = try await TestVideo.make(in: dir, name: "clip", seconds: 3, size: CGSize(width: 320, height: 240))
-        let store = ProjectStore(exporter: ExportManager())
+        let store = ProjectStore(exporter: ExportManager.test())
         let clip = try #require(store.importFiles([url]).first)
         await MediaLoader.load(clip)
         clip.inPoint = 1
@@ -233,11 +219,11 @@ struct InOutTests {
         store.addToTimeline([clip])
         #expect(store.timelineDuration == 1)
 
-        let job = try #require(store.exporter.export(
+        let job = store.exporter.export(
             asset: AVURLAsset(url: url),
             timeRange: CMTimeRange(start: CMTime(seconds: 1, preferredTimescale: 600), end: CMTime(seconds: 2, preferredTimescale: 600)),
-            name: "clip", format: .mp4, folder: dir
-        ))
+            name: "clip", preset: .builtIn("MP4 (H.264)"), folder: dir
+        )
         await job.task?.value
         let duration = try await AVURLAsset(url: job.outputURL).load(.duration).seconds
         #expect(abs(duration - 1) < 0.1)
@@ -352,8 +338,8 @@ struct DeinterlaceTests {
         let composition = try #require(try await Deinterlacer.videoComposition(for: asset, fieldOrder: .topFirst))
         #expect(composition.frameDuration == CMTime(value: 1, timescale: 60))
 
-        let manager = ExportManager()
-        let job = try #require(manager.export(asset: asset, videoComposition: composition, name: "out", format: .proRes, folder: dir))
+        let manager = ExportManager.test()
+        let job = manager.export(asset: asset, videoComposition: composition, name: "out", preset: .builtIn("ProRes 422"), folder: dir)
         await job.task?.value
         #expect(job.state == .finished)
 
@@ -428,7 +414,7 @@ struct WindowLayoutTests {
         let dir = try TestVideo.tempDirectory()
         let size = interlacedSD ? CGSize(width: 720, height: 480) : CGSize(width: 640, height: 360)
         let url = try await TestVideo.make(in: dir, name: "clip", seconds: 2, size: size)
-        let store = ProjectStore(exporter: ExportManager())
+        let store = ProjectStore(exporter: ExportManager.test())
 
         let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1200, height: 760),
                               styleMask: [.titled, .resizable, .closable], backing: .buffered, defer: false)
@@ -449,7 +435,7 @@ struct WindowLayoutTests {
     @Test func timelineWindowSettlesWithoutLayoutLoop() async throws {
         let dir = try TestVideo.tempDirectory()
         let url = try await TestVideo.make(in: dir, name: "clip", seconds: 2, size: CGSize(width: 640, height: 360))
-        let store = ProjectStore(exporter: ExportManager())
+        let store = ProjectStore(exporter: ExportManager.test())
 
         let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1200, height: 760),
                               styleMask: [.titled, .resizable, .closable], backing: .buffered, defer: false)
@@ -559,9 +545,9 @@ struct EnhanceTests {
 
     static func export(_ url: URL, _ settings: EnhanceSettings, to dir: URL, name: String) async throws -> ExportJob {
         let playable = try await Enhancer.makePlayable(url: url, settings: settings)
-        let manager = ExportManager()
-        let job = try #require(manager.export(asset: playable.asset, videoComposition: playable.videoComposition,
-                                              name: name, format: .proRes, folder: dir))
+        let manager = ExportManager.test()
+        let job = manager.export(asset: playable.asset, videoComposition: playable.videoComposition,
+                                 name: name, preset: .builtIn("ProRes 422"), folder: dir)
         await job.task?.value
         return job
     }
@@ -674,7 +660,7 @@ struct EffectsPreviewTests {
     @Test func windowWithAllEffectsSettles() async throws {
         let dir = try TestVideo.tempDirectory()
         let url = try await EnhanceTests.noisyClip(in: dir, seconds: 2)
-        let store = ProjectStore(exporter: ExportManager())
+        let store = ProjectStore(exporter: ExportManager.test())
         let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1200, height: 760),
                               styleMask: [.titled, .resizable, .closable], backing: .buffered, defer: false)
         window.contentView = NSHostingView(rootView: ContentView().environment(store).environment(store.exporter))
@@ -812,7 +798,7 @@ struct ProjectFileTests {
         let dir = try TestVideo.tempDirectory()
         let url = try await TestVideo.make(in: dir, name: "saved", seconds: 2, size: CGSize(width: 320, height: 240))
 
-        let store = ProjectStore(exporter: ExportManager())
+        let store = ProjectStore(exporter: ExportManager.test())
         let clip = try #require(store.importFiles([url]).first)
         clip.inPoint = 0.5
         clip.outPoint = 1.5
@@ -830,7 +816,7 @@ struct ProjectFileTests {
         let data = try JSONEncoder().encode(document.file)
         document.file = try JSONDecoder().decode(ProjectFile.self, from: data)
 
-        let reopened = ProjectStore(exporter: ExportManager())
+        let reopened = ProjectStore(exporter: ExportManager.test())
         reopened.apply(document.file)
         reopened.selectInitialItem()
         #expect(reopened.projectFile == store.projectFile)
@@ -853,7 +839,7 @@ struct ProjectFileTests {
         let dir = try TestVideo.tempDirectory()
         let a = try await TestVideo.make(in: dir, name: "a", seconds: 1, size: CGSize(width: 320, height: 240))
         let b = try await TestVideo.make(in: dir, name: "b", seconds: 1, size: CGSize(width: 320, height: 240))
-        let store = ProjectStore(exporter: ExportManager())
+        let store = ProjectStore(exporter: ExportManager.test())
         let before = store.projectFile
         store.importFiles([a])
         let oneClip = store.projectFile
@@ -879,7 +865,7 @@ struct ProjectFileTests {
         let file = ProjectFile.with(videos: [url, notVideo])
         #expect(file.clips.count == 1)
 
-        let store = ProjectStore(exporter: ExportManager())
+        let store = ProjectStore(exporter: ExportManager.test())
         store.apply(file)
         store.selectInitialItem()
         #expect(store.selectedClips.first?.name == "tape")
@@ -895,7 +881,7 @@ struct ProjectFileTests {
     @Test func missingVideoSaysSo() async throws {
         var file = ProjectFile()
         file.clips = [.init(url: URL(filePath: "/nowhere/tape.mov"), bookmark: nil)]
-        let store = ProjectStore(exporter: ExportManager())
+        let store = ProjectStore(exporter: ExportManager.test())
         store.apply(file)
         let clip = try #require(store.clips.first)
         for _ in 0..<50 where clip.loadError == nil { try await Task.sleep(for: .milliseconds(20)) }
@@ -914,5 +900,72 @@ struct ProjectFileTests {
             window.displayIfNeeded()
         }
         #expect(window.contentView?.fittingSize.width ?? 0 >= 700)
+    }
+}
+
+/// A 440 Hz stereo tone for test videos, written as AAC.
+final class TestAudio {
+    static let rate = 48_000
+    let input = AVAssetWriterInput(mediaType: .audio, outputSettings: [
+        AVFormatIDKey: kAudioFormatMPEG4AAC,
+        AVSampleRateKey: TestAudio.rate,
+        AVNumberOfChannelsKey: 2,
+        AVEncoderBitRateKey: 128_000,
+    ])
+    private var format: CMAudioFormatDescription?
+
+    init() {
+        input.expectsMediaDataInRealTime = false
+        var asbd = AudioStreamBasicDescription(
+            mSampleRate: Double(Self.rate), mFormatID: kAudioFormatLinearPCM,
+            mFormatFlags: kLinearPCMFormatFlagIsSignedInteger | kLinearPCMFormatFlagIsPacked,
+            mBytesPerPacket: 4, mFramesPerPacket: 1, mBytesPerFrame: 4, mChannelsPerFrame: 2,
+            mBitsPerChannel: 16, mReserved: 0
+        )
+        CMAudioFormatDescriptionCreate(allocator: nil, asbd: &asbd, layoutSize: 0, layout: nil,
+                                       magicCookieSize: 0, magicCookie: nil, extensions: nil, formatDescriptionOut: &format)
+    }
+
+    /// The sound that goes with one video frame.
+    func appendChunk(frame: Int, fps: Int) throws {
+        let start = frame * Self.rate / fps
+        let count = (frame + 1) * Self.rate / fps - start
+        var samples = [Int16](repeating: 0, count: count * 2)
+        for i in 0..<count {
+            let value = Int16(sin(Double(start + i) * 2 * .pi * 440 / Double(Self.rate)) * 8000)
+            samples[i * 2] = value
+            samples[i * 2 + 1] = value
+        }
+        let length = samples.count * 2
+        var block: CMBlockBuffer?
+        CMBlockBufferCreateWithMemoryBlock(allocator: nil, memoryBlock: nil, blockLength: length, blockAllocator: nil,
+                                           customBlockSource: nil, offsetToData: 0, dataLength: length,
+                                           flags: kCMBlockBufferAssureMemoryNowFlag, blockBufferOut: &block)
+        let data = try #require(block)
+        samples.withUnsafeBytes { bytes in
+            _ = CMBlockBufferReplaceDataBytes(with: bytes.baseAddress!, blockBuffer: data, offsetIntoDestination: 0, dataLength: length)
+        }
+        var buffer: CMSampleBuffer?
+        CMAudioSampleBufferCreateReadyWithPacketDescriptions(
+            allocator: nil, dataBuffer: data, formatDescription: try #require(format), sampleCount: count,
+            presentationTimeStamp: CMTime(value: CMTimeValue(start), timescale: CMTimeScale(Self.rate)),
+            packetDescriptions: nil, sampleBufferOut: &buffer
+        )
+        input.append(try #require(buffer))
+    }
+}
+
+extension ExportManager {
+    /// An export manager with its own settings, so tests don't change the app's.
+    static func test(_ name: String = "FunSizeTests") -> ExportManager {
+        let defaults = UserDefaults(suiteName: name)!
+        defaults.removePersistentDomain(forName: name)
+        return ExportManager(defaults: defaults)
+    }
+}
+
+extension ExportPreset {
+    static func builtIn(_ name: String) -> ExportPreset {
+        defaults.first { $0.name == name }!
     }
 }

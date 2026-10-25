@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 
 struct ContentView: View {
     @Environment(ProjectStore.self) private var store
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         @Bindable var store = store
@@ -24,6 +25,25 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 900, minHeight: 560)
+        .alert("Export Folder Not Found", isPresented: Binding(
+            get: { store.exportPrompt != nil },
+            // Buttons answer first; this only catches the alert closing some other way.
+            set: { if !$0 { DispatchQueue.main.async { store.answerPrompt(.cancel) } } }
+        ), presenting: store.exportPrompt) { _ in
+            Button("Choose Folder…") { store.answerPrompt(.chooseFolder) }
+            Button("Open Settings…") { store.answerPrompt(.openSettings) }
+            Button("Cancel", role: .cancel) { store.answerPrompt(.cancel) }
+        } message: { prompt in
+            if case .missingFolder(let path) = prompt {
+                Text("FunSize can't find your export folder at \(path.abbreviatingWithTilde). It may have been moved, renamed, or be on a drive that isn't connected.\n\nChoose where to save this export, or set a new export folder in Settings.")
+            }
+        }
+        .onAppear {
+            store.openExportSettings = {
+                UserDefaults.standard.set(SettingsPage.exportPresets.rawValue, forKey: SettingsPage.storageKey)
+                openSettings()
+            }
+        }
     }
 }
 

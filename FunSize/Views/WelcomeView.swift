@@ -19,15 +19,16 @@ struct WelcomeView: View {
     @State private var openError: String?
 
     var body: some View {
+        // Content stays below the hidden title bar; only the right side's background reaches the top.
         HStack(spacing: 0) {
             actions
                 .frame(width: 420)
             Divider()
+                .ignoresSafeArea()
             recentList
                 .frame(width: 300)
         }
-        .frame(height: 440)
-        .ignoresSafeArea()
+        .frame(height: 420)
         .onAppear {
             WelcomeWindow.open = { openWindow(id: WelcomeWindow.id) }
             refreshRecents()
@@ -49,7 +50,7 @@ struct WelcomeView: View {
 
     private var actions: some View {
         VStack(spacing: 0) {
-            Spacer(minLength: 28)
+            Spacer(minLength: 4)
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable()
                 .frame(width: 104, height: 104)
@@ -99,7 +100,7 @@ struct WelcomeView: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 16)
-                .padding(.top, 40)
+                .padding(.top, 8)
                 .padding(.bottom, 6)
 
             if recents.isEmpty {
@@ -142,7 +143,7 @@ struct WelcomeView: View {
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(.background.secondary)
+        .background(.background.secondary, ignoresSafeAreaEdges: .all)
     }
 
     // MARK: Actions

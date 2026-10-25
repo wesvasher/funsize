@@ -7,7 +7,7 @@ struct FunSizeApp: App {
 
     var body: some Scene {
         DocumentGroup(newDocument: ProjectDocument()) { file in
-            ProjectWindow(document: file.$document)
+            ProjectWindow(document: file.$document, fileURL: file.fileURL)
                 .environment(exporter)
         }
         .defaultSize(width: 1200, height: 760)

@@ -30,6 +30,11 @@ targets:
             UTTypeConformsTo: [public.data, public.content]
             UTTypeTagSpecification:
               public.filename-extension: [funsize]
+          - UTTypeIdentifier: com.wesvasher.funsize.presets
+            UTTypeDescription: FunSize Export Presets
+            UTTypeConformsTo: [public.json]
+            UTTypeTagSpecification:
+              public.filename-extension: [funsizepresets]
     entitlements:
       path: FunSize/FunSize.entitlements
       properties:

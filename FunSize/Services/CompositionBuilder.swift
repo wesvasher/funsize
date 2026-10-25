@@ -45,7 +45,7 @@ enum CompositionBuilder {
         var placements: [Placement] = []
         var cursor = CMTime.zero
         var renderSize: CGSize?
-        var frameRate: Float = 0
+        var frameDuration: CMTime?
 
         for segment in segments {
             let range = CMTimeRange(
@@ -57,11 +57,14 @@ enum CompositionBuilder {
             let asset = AVURLAsset(url: segment.url)
 
             if let source = try await asset.loadTracks(withMediaType: .video).first {
-                let fps = try await source.load(.nominalFrameRate)
+                let minFrame = try await source.load(.minFrameDuration)
                 let geometry = try await VideoGeometry.load(source)
                 try videoTrack.insertTimeRange(range, of: source, at: cursor)
                 placements.append(Placement(at: cursor, naturalSize: geometry.encodedSize, transform: geometry.transform))
-                frameRate = max(frameRate, fps)
+                // Use the fastest clip's exact timing (29.97 stays 29.97).
+                if minFrame.isNumeric, minFrame > .zero, frameDuration.map({ minFrame < $0 }) ?? true {
+                    frameDuration = minFrame
+                }
                 if renderSize == nil {
                     let size = geometry.displaySize
                     renderSize = CGSize(width: evenFloor(size.width), height: evenFloor(size.height))
@@ -94,12 +97,17 @@ enum CompositionBuilder {
                 layerInstructions: [AVVideoCompositionLayerInstruction(configuration: layer)],
                 timeRange: CMTimeRange(start: .zero, duration: cursor)
             ))
-            let fps = Int32(min(max(frameRate.rounded(), 24), 60))
-            videoComposition = AVVideoComposition(configuration: .init(
-                frameDuration: CMTime(value: 1, timescale: fps),
+            let shortest = CMTime(value: 1, timescale: 120), longest = CMTime(value: 1, timescale: 10)
+            let duration = min(max(frameDuration ?? CMTime(value: 1, timescale: 30), shortest), longest)
+            var config = AVVideoComposition.Configuration(
+                frameDuration: duration,
                 instructions: [instruction],
                 renderSize: renderSize
-            ))
+            )
+            // Output a frame for each source frame, at its exact time. Without this the
+            // compositor drops a frame near the start and drifts on 29.97 video.
+            config.sourceTrackIDForFrameTiming = videoTrack.trackID
+            videoComposition = AVVideoComposition(configuration: config)
         } else {
             composition.removeTrack(videoTrack)
         }

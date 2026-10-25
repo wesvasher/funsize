@@ -4,6 +4,8 @@ import SwiftUI
 /// saved document, so edits mark the window as changed and Undo/Redo work.
 struct ProjectWindow: View {
     @Binding var document: ProjectDocument
+    /// Where the project is saved; `nil` until it's saved.
+    var fileURL: URL?
     @Environment(ExportManager.self) private var exporter
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow
@@ -21,6 +23,9 @@ struct ProjectWindow: View {
                     .onChange(of: document.file) { _, file in
                         store.apply(file)
                     }
+                    .onChange(of: fileURL) { _, url in
+                        store.projectURL = url
+                    }
             } else {
                 Color.clear
                     .frame(minWidth: 900, minHeight: 560)
@@ -31,6 +36,7 @@ struct ProjectWindow: View {
                 let store = ProjectStore(exporter: exporter)
                 store.apply(document.file)
                 store.selectInitialItem()
+                store.projectURL = fileURL
                 self.store = store
             }
             WelcomeWindow.open = { openWindow(id: WelcomeWindow.id) }

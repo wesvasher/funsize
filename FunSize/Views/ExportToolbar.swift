@@ -11,12 +11,12 @@ struct ExportToolbar: ToolbarContent {
         }
         ToolbarItem(placement: .primaryAction) {
             Menu {
-                Section("Video") { buttons(ExportFormat.videoFormats) }
-                Section("Resize") { buttons(ExportFormat.resizeFormats) }
-                Section("Audio") { buttons(ExportFormat.audioFormats) }
+                ExportPresetMenuItems { preset in store.exportSelection(as: preset) }
                 Divider()
-                Button("Show Export Folder", systemImage: "folder") { exporter.revealDestinationFolder() }
-                SettingsLink { Label("Change Export Folder…", systemImage: "gearshape") }
+                if let folder = shownFolder {
+                    Button("Show Export Folder", systemImage: "folder") { NSWorkspace.shared.open(folder) }
+                }
+                Button("Export Settings…", systemImage: "gearshape") { store.openExportSettings?() }
             } label: {
                 Label("Export", systemImage: "square.and.arrow.up")
             }
@@ -26,11 +26,38 @@ struct ExportToolbar: ToolbarContent {
         }
     }
 
-    private func buttons(_ formats: [ExportFormat]) -> some View {
-        ForEach(formats) { format in
-            Button(format.title, systemImage: format.systemImage) {
-                store.exportSelection(as: format)
-            }
+    /// The folder exports currently go to, when there is a fixed one.
+    private var shownFolder: URL? {
+        switch exporter.location {
+        case .projectFolder: store.projectURL?.deletingLastPathComponent()
+        case .folder: exporter.customFolderIsMissing ? nil : exporter.customFolder
+        case .ask: exporter.lastChosenFolder
+        }
+    }
+}
+
+/// The export presets as menu items: video presets first, then audio-only ones.
+struct ExportPresetMenuItems: View {
+    @Environment(ExportManager.self) private var exporter
+    let action: (ExportPreset) -> Void
+
+    var body: some View {
+        let video = exporter.presets.filter { !$0.isAudioOnly }
+        let audio = exporter.presets.filter(\.isAudioOnly)
+        if exporter.presets.isEmpty {
+            Text("No Export Presets")
+        }
+        if !video.isEmpty {
+            Section("Video") { buttons(video) }
+        }
+        if !audio.isEmpty {
+            Section("Audio") { buttons(audio) }
+        }
+    }
+
+    private func buttons(_ presets: [ExportPreset]) -> some View {
+        ForEach(presets) { preset in
+            Button(preset.name, systemImage: preset.systemImage) { action(preset) }
         }
     }
 }
@@ -92,7 +119,7 @@ struct ExportActivityView: View {
                 .frame(maxHeight: 360)
             }
 
-            Text("Saving to \(exporter.destinationFolder.path(percentEncoded: false).abbreviatingWithTilde)")
+            Text(locationNote)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -101,6 +128,14 @@ struct ExportActivityView: View {
         }
         .frame(width: 360)
     }
+
+    private var locationNote: String {
+        switch exporter.location {
+        case .projectFolder: "Exports are saved next to the project file"
+        case .ask: "FunSize asks where to save each export"
+        case .folder: "Exports are saved to \((exporter.customFolderPath ?? "").abbreviatingWithTilde)"
+        }
+    }
 }
 
 private struct ExportJobRow: View {
@@ -108,7 +143,7 @@ private struct ExportJobRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: job.format.systemImage)
+            Image(systemName: job.systemImage)
                 .font(.title2)
                 .foregroundStyle(.secondary)
                 .frame(width: 28)

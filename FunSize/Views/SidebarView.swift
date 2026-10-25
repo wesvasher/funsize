@@ -69,11 +69,7 @@ struct SidebarView: View {
                 store.addToTimeline(clips)
             }
             Menu("Export As") {
-                ForEach(ExportFormat.allCases) { format in
-                    Button(format.title, systemImage: format.systemImage) {
-                        clips.forEach { store.exportClip($0, as: format) }
-                    }
-                }
+                ExportPresetMenuItems { preset in store.exportClips(clips, as: preset) }
             }
             Divider()
             Button("Show in Finder", systemImage: "folder") {

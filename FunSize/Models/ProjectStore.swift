@@ -1,3 +1,4 @@
+import AppKit
 import AVFoundation
 import Observation
 
@@ -242,67 +243,165 @@ final class ProjectStore {
     }
 
     /// Exports whatever is selected: the timeline, or each selected clip.
-    func exportSelection(as format: ExportFormat) {
+    func exportSelection(as preset: ExportPreset) {
         if isTimelineSelected {
-            exportTimeline(as: format)
+            exportTimeline(as: preset)
         } else {
-            for clip in selectedClips {
-                exportClip(clip, as: format)
+            exportClips(selectedClips, as: preset)
+        }
+    }
+
+    /// Exports each clip (or just its in/out range when one is marked).
+    func exportClips(_ clips: [Clip], as preset: ExportPreset) {
+        guard !clips.isEmpty else { return }
+        Task {
+            guard let folder = await exportFolder() else { return }
+            for clip in clips {
+                await exportClip(clip, as: preset, to: folder)
             }
         }
     }
 
-    /// Exports a clip, or just its in/out range when one is marked.
-    func exportClip(_ clip: Clip, as format: ExportFormat) {
-        var timeRange: CMTimeRange?
-        if clip.hasMarks {
-            let range = clip.markedRange
-            timeRange = CMTimeRange(
-                start: CMTime(seconds: range.lowerBound, preferredTimescale: 90_000),
-                end: CMTime(seconds: range.upperBound, preferredTimescale: 90_000)
-            )
-        }
+    func exportClip(_ clip: Clip, as preset: ExportPreset, to folder: URL) async {
         let settings = clip.enhanceSettings
-        guard settings.isActive, !format.isAudioOnly else {
-            exporter.export(asset: AVURLAsset(url: clip.url), timeRange: timeRange, name: clip.name, format: format)
+        let enhanced = settings.isActive && !preset.isAudioOnly
+        let name = enhanced ? "\(clip.name) \(clip.exportNameSuffix)" : clip.name
+        guard clip.isLoaded else {
+            exporter.reportFailure(clip.loadError ?? "This clip is still loading. Try again in a moment.", name: name, preset: preset)
             return
         }
-        let name = "\(clip.name) \(clip.exportNameSuffix)"
-        let url = clip.url
-        Task {
-            do {
-                let playable = try await Enhancer.makePlayable(url: url, settings: settings)
+        let range = clip.markedRange
+        do {
+            if enhanced {
+                let playable = try await Enhancer.makePlayable(url: clip.url, settings: settings)
+                let timeRange = clip.hasMarks
+                    ? CMTimeRange(start: CMTime(seconds: range.lowerBound, preferredTimescale: 90_000),
+                                  end: CMTime(seconds: range.upperBound, preferredTimescale: 90_000))
+                    : nil
                 exporter.export(asset: playable.asset, videoComposition: playable.videoComposition,
-                                timeRange: timeRange, name: name, format: format)
-            } catch {
-                exporter.jobs.insert(failedJob(error, name: name, format: format), at: 0)
-                exporter.isShowingActivity = true
+                                timeRange: timeRange, name: name, preset: preset, folder: folder)
+            } else {
+                // Goes through a composition so the picture shape is corrected the same way as in the preview.
+                let built = try await CompositionBuilder.build([.init(url: clip.url, start: range.lowerBound, end: range.upperBound)])
+                exporter.export(asset: built.composition, videoComposition: built.videoComposition,
+                                name: name, preset: preset, folder: folder)
             }
+        } catch {
+            exporter.reportFailure(error.localizedDescription, name: name, preset: preset)
         }
     }
 
-    func exportTimeline(as format: ExportFormat) {
+    func exportTimeline(as preset: ExportPreset) {
         Task {
+            guard let folder = await exportFolder() else { return }
+            let name = "Timeline \(Date.now.formatted(.dateTime.year().month().day().hour().minute()))"
+                .replacingOccurrences(of: "/", with: "-")
+                .replacingOccurrences(of: ":", with: ".")
             do {
                 let result = try await buildTimeline()
-                exporter.export(
-                    asset: result.composition,
-                    videoComposition: result.videoComposition,
-                    name: "Timeline \(Date.now.formatted(.dateTime.year().month().day().hour().minute()))"
-                        .replacingOccurrences(of: "/", with: "-")
-                        .replacingOccurrences(of: ":", with: "."),
-                    format: format
-                )
+                exporter.export(asset: result.composition, videoComposition: result.videoComposition,
+                                name: name, preset: preset, folder: folder)
             } catch {
-                exporter.jobs.insert(failedJob(error, name: "Timeline", format: format), at: 0)
-                exporter.isShowingActivity = true
+                exporter.reportFailure(error.localizedDescription, name: "Timeline", preset: preset)
             }
         }
     }
 
-    private func failedJob(_ error: Error, name: String, format: ExportFormat) -> ExportJob {
-        let job = ExportJob(name: name, format: format, outputURL: exporter.destinationFolder.appending(path: name))
-        job.state = .failed(error.localizedDescription)
-        return job
+    // MARK: Where exports go
+
+    /// The saved project file, or `nil` if it hasn't been saved yet.
+    var projectURL: URL?
+
+    /// The folder exports go to, following Settings. May ask the user. `nil` means cancelled.
+    func exportFolder() async -> URL? {
+        switch exporter.location {
+        case .projectFolder:
+            guard let projectURL else {
+                return await chooseFolder(message: "This project hasn't been saved yet. Choose where to save the exported videos.",
+                                          startingAt: exporter.lastChosenFolder)
+            }
+            let folder = projectURL.deletingLastPathComponent()
+            if exporter.canWrite(to: folder) { return folder }
+            return await chooseFolder(
+                message: "To save exports next to “\(projectURL.deletingPathExtension().lastPathComponent)”, allow FunSize to use this folder by clicking Export Here. You only need to do this once.",
+                startingAt: folder
+            )
+        case .ask:
+            return await chooseFolder(message: "Choose where to save the exported videos.", startingAt: exporter.lastChosenFolder)
+        case .folder:
+            if let folder = exporter.availableCustomFolder() { return folder }
+            guard exporter.customFolderPath != nil else {
+                return await chooseFolder(message: "Choose where to save the exported videos.", startingAt: exporter.lastChosenFolder)
+            }
+            switch await ask(.missingFolder(path: exporter.customFolderPath ?? "")) {
+            case .chooseFolder:
+                return await chooseFolder(message: "Choose where to save the exported videos.", startingAt: nil)
+            case .openSettings:
+                openExportSettings?()
+                return nil
+            case .cancel:
+                return nil
+            }
+        }
+    }
+
+    /// Shown over the project window when exports can't go where Settings says.
+    enum ExportPrompt: Equatable {
+        case missingFolder(path: String)
+    }
+
+    enum PromptChoice {
+        case chooseFolder, openSettings, cancel
+    }
+
+    private(set) var exportPrompt: ExportPrompt?
+    @ObservationIgnored
+    private var promptContinuation: CheckedContinuation<PromptChoice, Never>?
+
+    /// Opens Settings at the Export Presets page. Set by the window.
+    @ObservationIgnored
+    var openExportSettings: (() -> Void)?
+
+    private func ask(_ prompt: ExportPrompt) async -> PromptChoice {
+        promptContinuation?.resume(returning: .cancel)
+        return await withCheckedContinuation { continuation in
+            promptContinuation = continuation
+            exportPrompt = prompt
+        }
+    }
+
+    /// The user's answer to `exportPrompt`. Only the first answer counts.
+    func answerPrompt(_ choice: PromptChoice) {
+        exportPrompt = nil
+        promptContinuation?.resume(returning: choice)
+        promptContinuation = nil
+    }
+
+    /// Asks for a folder with a standard Open panel, attached to the project window.
+    /// Replaced in tests.
+    @ObservationIgnored
+    var folderPicker: @MainActor (_ message: String, _ start: URL?) async -> URL? = { message, start in
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Export Here"
+        panel.message = message
+        panel.directoryURL = start
+        let response: NSApplication.ModalResponse
+        if let window = NSApp.keyWindow ?? NSApp.mainWindow {
+            response = await panel.beginSheetModal(for: window)
+        } else {
+            response = panel.runModal()
+        }
+        return response == .OK ? panel.url : nil
+    }
+
+    private func chooseFolder(message: String, startingAt start: URL?) async -> URL? {
+        guard let folder = await folderPicker(message, start) else { return nil }
+        _ = folder.startAccessingSecurityScopedResource()
+        exporter.rememberAccess(to: folder)
+        exporter.lastChosenFolder = folder
+        return folder
     }
 }
