@@ -81,6 +81,9 @@ final class Clip: Identifiable {
     /// 0…1: how strongly the LUT applies.
     var lutIntensity = 1.0
 
+    /// Color correction from the Grade section, applied after the LUT.
+    var grade = ColorGrade()
+
     /// The chosen LUT, if it's still in the library.
     var lut: ColorLUT? { LUTLibrary.shared.lut(id: lutID) }
 
@@ -105,7 +108,8 @@ final class Clip: Identifiable {
             denoiseStrength: canEnhance && denoise ? Float(denoiseStrength) : nil,
             upscale: canEnhance ? upscale : .off,
             sharpen: canEnhance ? Float(sharpen) : 0,
-            lut: canEnhance ? lut.map { AppliedLUT(lut: $0, intensity: Float(lutIntensity)) } : nil
+            lut: canEnhance ? lut.map { AppliedLUT(lut: $0, intensity: Float(lutIntensity)) } : nil,
+            grade: canEnhance && !grade.isIdentity ? grade : nil
         )
     }
 
@@ -128,7 +132,7 @@ final class Clip: Identifiable {
         var parts: [String] = []
         if settings.fieldOrder != nil { parts.append(deinterlacedRateLabel) }
         if settings.denoiseStrength != nil || settings.upscale != .off || settings.sharpen > 0 { parts.append("Enhanced") }
-        if settings.lut != nil { parts.append("Graded") }
+        if settings.lut != nil || settings.grade != nil { parts.append("Graded") }
         return parts.joined(separator: " ")
     }
 
@@ -161,6 +165,7 @@ final class Clip: Identifiable {
         r.sharpen = sharpen
         r.lutID = lutID
         r.lutIntensity = lutIntensity
+        r.grade = grade
         return r
     }
 
@@ -178,6 +183,7 @@ final class Clip: Identifiable {
         if sharpen != r.sharpen { sharpen = r.sharpen }
         if lutID != r.lutID { lutID = r.lutID }
         if lutIntensity != r.lutIntensity { lutIntensity = r.lutIntensity }
+        if grade != r.grade { grade = r.grade }
     }
 
     var poster: CGImage? { thumbnails.first?.image }

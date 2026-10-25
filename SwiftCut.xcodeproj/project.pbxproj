@@ -28,6 +28,7 @@
 		6B1A068547515E79C1A4237E /* Transcoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = B99F134539B4E6DD96C08B0C /* Transcoder.swift */; };
 		6D0FB7739338A9EC9D4BA660 /* TimelineEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33C92205D480F96689F504F1 /* TimelineEditorView.swift */; };
 		70D380513EF8F39B5395C993 /* SuperResolutionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25E508091518B2278CC00981 /* SuperResolutionModel.swift */; };
+		7D7EB1EF705679AA30E847C7 /* ColorGradeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B0197FCAB4325E68736D735 /* ColorGradeTests.swift */; };
 		8141C3CCB46DBE1F6A6AAA1A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0A89C74F0EA246302F10F942 /* Assets.xcassets */; };
 		840EF5E2122E2D3490407A4E /* ColorSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72C97ACC847E4DF3B39889F0 /* ColorSettingsView.swift */; };
 		860FA4D5BECA775D025431C6 /* ClipInspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7851F2E03E080FEACC2B5416 /* ClipInspectorView.swift */; };
@@ -41,6 +42,7 @@
 		CCDEFF893F635ECE80BAD50A /* MediaLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2B86064BFE3B60B8354AD47 /* MediaLoader.swift */; };
 		D19D0486DB084A9697D4F59E /* ProjectDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA6A047EA5580454964B1DEE /* ProjectDocument.swift */; };
 		DA8B3D5BE33CD75D307B6F71 /* EffectsPresets.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE7AD13989918B8794AEB6C4 /* EffectsPresets.swift */; };
+		DB3817FBCBAA03F33DA45156 /* ColorGrade.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDDB1CC6F09B34F4B6E1A247 /* ColorGrade.swift */; };
 		E27378EE0AB57CCDE29F2156 /* TimelineInspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8165EE9AAAE6C156CFA2C4AF /* TimelineInspectorView.swift */; };
 		ECAF05BB9F983BE0E03EEE94 /* ChoiceCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3D979EA61A8EDFF328FB7F1 /* ChoiceCards.swift */; };
 		F146FADFBFEAD2136CDDCBD0 /* Enhancer.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD8A49CD46E8D3AA7625EA3F /* Enhancer.swift */; };
@@ -82,6 +84,7 @@
 		8165EE9AAAE6C156CFA2C4AF /* TimelineInspectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineInspectorView.swift; sourceTree = "<group>"; };
 		8550F421DB4DC1A72E2480DC /* SwiftCutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftCutTests.swift; sourceTree = "<group>"; };
 		8751734291C10C88E237CE33 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		8B0197FCAB4325E68736D735 /* ColorGradeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorGradeTests.swift; sourceTree = "<group>"; };
 		941DD830EF829FC6E81904BF /* SwiftCut.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SwiftCut.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A28063A3F34061522459B636 /* FullScreenPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullScreenPlayer.swift; sourceTree = "<group>"; };
 		A516C3B1E61AB11B92AEC8C0 /* SwiftCut-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "SwiftCut-Bridging-Header.h"; sourceTree = "<group>"; };
@@ -90,6 +93,7 @@
 		B3EC3CFD54129F7418FC4E13 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		B99F134539B4E6DD96C08B0C /* Transcoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Transcoder.swift; sourceTree = "<group>"; };
 		BA6A047EA5580454964B1DEE /* ProjectDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectDocument.swift; sourceTree = "<group>"; };
+		BDDB1CC6F09B34F4B6E1A247 /* ColorGrade.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorGrade.swift; sourceTree = "<group>"; };
 		C58F60D05AFBF162E727CC00 /* ColorLUT.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorLUT.swift; sourceTree = "<group>"; };
 		C6D3E9B971A2BDC954079A54 /* ExportPresetsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportPresetsSettingsView.swift; sourceTree = "<group>"; };
 		CA40600C8B1D09EBA8019AD5 /* ProjectStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectStore.swift; sourceTree = "<group>"; };
@@ -146,6 +150,7 @@
 			isa = PBXGroup;
 			children = (
 				5A1D6FA451A065A0C083F2B9 /* Clip.swift */,
+				BDDB1CC6F09B34F4B6E1A247 /* ColorGrade.swift */,
 				C58F60D05AFBF162E727CC00 /* ColorLUT.swift */,
 				EE7AD13989918B8794AEB6C4 /* EffectsPresets.swift */,
 				CF3C4EFD3E8BFBBA73632423 /* ExportPreset.swift */,
@@ -185,6 +190,7 @@
 		6EDBFA61380157169B91FD1A /* SwiftCutTests */ = {
 			isa = PBXGroup;
 			children = (
+				8B0197FCAB4325E68736D735 /* ColorGradeTests.swift */,
 				F0B1CD8460F24BAF4319CB16 /* ColorTests.swift */,
 				F6BA4AA90E73EA53FB016421 /* ExportPresetTests.swift */,
 				8550F421DB4DC1A72E2480DC /* SwiftCutTests.swift */,
@@ -313,6 +319,7 @@
 				697F72F0DE684160A2AE50C3 /* ClipDetailView.swift in Sources */,
 				860FA4D5BECA775D025431C6 /* ClipInspectorView.swift in Sources */,
 				AC840E04EF2CAD0252DE729F /* ClipPlayerController.swift in Sources */,
+				DB3817FBCBAA03F33DA45156 /* ColorGrade.swift in Sources */,
 				C22522366C6A7F0F1BDD05AB /* ColorLUT.swift in Sources */,
 				840EF5E2122E2D3490407A4E /* ColorSettingsView.swift in Sources */,
 				F232530A92FD2033C03A5675 /* CompositionBuilder.swift in Sources */,
@@ -349,6 +356,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7D7EB1EF705679AA30E847C7 /* ColorGradeTests.swift in Sources */,
 				479525505657F6020189E5BA /* ColorTests.swift in Sources */,
 				5ED7CCAC40354C5CAAD0EFE2 /* ExportPresetTests.swift in Sources */,
 				52406DC514B8FDF95954FDAE /* SwiftCutTests.swift in Sources */,

@@ -95,6 +95,7 @@ struct ClipInspectorView: View {
                 if clip.hasVideo {
                     effects
                     color
+                    GradeSection(clip: clip)
                 }
             }
             .padding(.horizontal, 12)
@@ -448,6 +449,132 @@ private struct ModelStatusView: View {
             }
         }
         .onAppear { model.refresh(for: size) }
+    }
+}
+
+/// Basic color correction sliders, applied after the LUT. The preview follows them as you drag.
+private struct GradeSection: View {
+    @Bindable var clip: Clip
+    @State private var saveError: String?
+
+    /// One slider: what it changes, its range, and how its value reads.
+    private struct Control: Identifiable {
+        let title: String
+        let help: String
+        let keyPath: WritableKeyPath<ColorGrade, Double>
+        var range: ClosedRange<Double> = -1...1
+        var isExposure = false
+        var id: String { title }
+    }
+
+    private static let light: [Control] = [
+        Control(title: "Exposure", help: "Brightens or darkens the whole picture, in stops of light",
+                keyPath: \.exposure, range: -2...2, isExposure: true),
+        Control(title: "Contrast", help: "Makes the difference between dark and bright areas smaller or bigger", keyPath: \.contrast),
+        Control(title: "Highlights", help: "Darken to recover detail in bright areas, or brighten them", keyPath: \.highlights),
+        Control(title: "Shadows", help: "Brighten to open up dark areas, or deepen them", keyPath: \.shadows),
+    ]
+
+    private static let color: [Control] = [
+        Control(title: "Temperature", help: "Cooler (bluer) to the left, warmer (more orange) to the right", keyPath: \.temperature),
+        Control(title: "Tint", help: "Greener to the left, more magenta to the right", keyPath: \.tint),
+        Control(title: "Saturation", help: "How colorful everything is. All the way left is black and white", keyPath: \.saturation),
+        Control(title: "Vibrance", help: "Boosts or mutes dull colors while mostly leaving strong colors alone", keyPath: \.vibrance),
+    ]
+
+    var body: some View {
+        InspectorSection("Grade") {
+            Menu {
+                Button("Reset Grade") { clip.grade = ColorGrade() }
+                    .disabled(clip.grade.isIdentity)
+                Divider()
+                Button("Save as LUT") { saveAsLUT() }
+                    .disabled(clip.grade.isIdentity)
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.caption)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Reset the grade, or save it to your LUT library")
+        } content: {
+            if clip.canEnhance {
+                group("Light", Self.light)
+                group("Color", Self.color)
+                GridRow {
+                    Text("Double-click a name to reset it. Applies after the LUT, to this video and all of its subclips.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .gridCellColumns(2)
+                }
+            } else {
+                GridRow {
+                    Text(clip.isRotated ? "Not available for rotated video yet" : "None available for this clip")
+                        .foregroundStyle(.secondary)
+                        .gridCellColumns(2)
+                }
+            }
+        }
+        .alert("Couldn't Save the LUT", isPresented: Binding(get: { saveError != nil }, set: { if !$0 { saveError = nil } })) {
+            Button("OK") {}
+        } message: {
+            Text(saveError ?? "")
+        }
+    }
+
+    @ViewBuilder
+    private func group(_ title: String, _ controls: [Control]) -> some View {
+        GridRow {
+            Text(title)
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.tertiary)
+                .gridCellColumns(2)
+                .padding(.top, 2)
+        }
+        ForEach(controls) { control in
+            row(control)
+        }
+    }
+
+    private func row(_ control: Control) -> some View {
+        let value = clip.grade[keyPath: control.keyPath]
+        return GridRow {
+            InspectorLabel(control.title)
+                .fontWeight(value == 0 ? nil : .medium)
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2) { clip.grade[keyPath: control.keyPath] = 0 }
+                .help("\(control.help). Double-click to reset.")
+            HStack(spacing: 6) {
+                Slider(value: $clip.grade[dynamicMember: control.keyPath], in: control.range)
+                    .help(control.help)
+                Text(Self.format(value, exposure: control.isExposure))
+                    .monospacedDigit()
+                    .foregroundStyle(value == 0 ? .secondary : .primary)
+                    .frame(width: 34, alignment: .trailing)
+            }
+        }
+    }
+
+    /// "+0.5" for exposure (stops), "+25" for the rest (−100…+100).
+    private static func format(_ value: Double, exposure: Bool) -> String {
+        if exposure {
+            let rounded = (value * 10).rounded() / 10
+            return rounded == 0 ? "0" : String(format: "%+.1f", rounded)
+        }
+        let percent = Int((value * 100).rounded())
+        return percent == 0 ? "0" : String(format: "%+d", percent)
+    }
+
+    /// Adds the grade to the LUT library (Settings › Color), to reuse or export.
+    private func saveAsLUT() {
+        do {
+            let lut = clip.grade.makeLUT(name: "\(clip.name) Grade")
+            try LUTLibrary.shared.add(lut)
+        } catch {
+            saveError = error.localizedDescription
+        }
     }
 }
 

@@ -44,8 +44,10 @@ final class ClipPlayerController {
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
     }
 
-    /// Effects currently built into the preview.
+    /// Effects currently built into the preview (with the grade's values left out: see `structure`).
     @ObservationIgnored private var appliedSettings = EnhanceSettings()
+    /// The grade the preview shows. Moving a Grade slider changes it in place, without a rebuild.
+    let liveGrade = LiveGrade()
     /// The preview with effects, and the same without the Effects section (for "Show Original").
     @ObservationIgnored private var effectsItem: AVPlayerItem?
     @ObservationIgnored private var originalItem: AVPlayerItem?
@@ -88,13 +90,15 @@ final class ClipPlayerController {
         if let subclip { seek(to: subclip.start) }
     }
 
-    /// Rebuilds the preview so it shows the clip's current effects (deinterlace, noise, upscale, sharpen).
+    /// Rebuilds the preview so it shows the clip's current effects (deinterlace, noise, upscale, LUT, sharpen).
+    /// Grade changes alone don't need this; see `updateGrade()`.
     func applyEffects() async {
         guard let clip else { return }
         let settings = clip.enhanceSettings
-        guard settings != appliedSettings else { return }
+        liveGrade.value = settings.grade ?? ColorGrade()
+        guard settings.structure != appliedSettings else { return }
         do {
-            let item = try await Self.makeItem(url: clip.url, settings: settings)
+            let item = try await Self.makeItem(url: clip.url, settings: settings, liveGrade: liveGrade)
             // The comparison version keeps Timing (deinterlace) so both play at the same frame rate.
             let original = settings.hasLook ? try await Self.makeItem(url: clip.url, settings: settings.timingOnly) : nil
             guard self.clip?.id == clip.id, !Task.isCancelled else { return }
@@ -105,7 +109,7 @@ final class ClipPlayerController {
             if let original { attachFrameOutput(to: original) }
             effectsItem = item
             originalItem = original
-            appliedSettings = settings
+            appliedSettings = settings.structure
             clip.effectsError = nil
             switchVersion(to: isShowingOriginal ? (original ?? item) : item)
         } catch {
@@ -180,8 +184,22 @@ final class ClipPlayerController {
         return storedFrames[key]?.image
     }
 
-    private static func makeItem(url: URL, settings: EnhanceSettings) async throws -> AVPlayerItem {
-        let playable = try await Enhancer.makePlayable(url: url, settings: settings)
+    /// Shows the clip's current grade right away. Turning grading on or off still needs
+    /// `applyEffects()`, which the view runs shortly after.
+    func updateGrade() {
+        guard let clip else { return }
+        liveGrade.value = clip.enhanceSettings.grade ?? ColorGrade()
+        guard appliedSettings.grade != nil, let item = effectsItem else { return }
+        // The saved still of this version shows the old grade.
+        storedFrames[ObjectIdentifier(item)] = nil
+        // A paused player doesn't draw again by itself; seeking to the same spot redraws the frame.
+        if !isPlaying, player.currentItem === item {
+            player.seek(to: item.currentTime(), toleranceBefore: .zero, toleranceAfter: .zero)
+        }
+    }
+
+    private static func makeItem(url: URL, settings: EnhanceSettings, liveGrade: LiveGrade? = nil) async throws -> AVPlayerItem {
+        let playable = try await Enhancer.makePlayable(url: url, settings: settings, liveGrade: liveGrade)
         let item = AVPlayerItem(asset: playable.asset)
         item.videoComposition = playable.videoComposition
         return item

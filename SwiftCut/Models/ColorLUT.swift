@@ -394,6 +394,13 @@ final class LUTLibrary {
         return lut
     }
 
+    /// Adds a LUT made in the app (such as a saved grade) to the imported list.
+    func add(_ lut: ColorLUT) throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try CubeFile.write(lut).write(to: directory.appending(path: "\(lut.id.uuidString).cube"), atomically: true, encoding: .utf8)
+        reload()
+    }
+
     func delete(_ ids: Set<UUID>) {
         for lut in imported where ids.contains(lut.id) {
             try? FileManager.default.removeItem(at: directory.appending(path: "\(lut.id.uuidString).cube"))
