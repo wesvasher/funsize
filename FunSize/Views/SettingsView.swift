@@ -3,6 +3,7 @@ import SwiftUI
 /// Pages in the Settings window's sidebar.
 enum SettingsPage: String, CaseIterable, Identifiable {
     case general
+    case appearance
     case exportPresets
 
     /// Remembers the last page; other windows set it to open Settings on a page.
@@ -13,6 +14,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .general: "General"
+        case .appearance: "Appearance"
         case .exportPresets: "Export Presets"
         }
     }
@@ -20,6 +22,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .general: "gearshape"
+        case .appearance: "circle.lefthalf.filled"
         case .exportPresets: "square.and.arrow.up.on.square"
         }
     }
@@ -27,6 +30,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     var tint: Color {
         switch self {
         case .general: .gray
+        case .appearance: .indigo
         case .exportPresets: .blue
         }
     }
@@ -57,12 +61,56 @@ struct SettingsView: View {
             Group {
                 switch page {
                 case .general: GeneralSettingsView()
+                case .appearance: AppearanceSettingsView()
                 case .exportPresets: ExportPresetsSettingsView()
                 }
             }
             .navigationTitle(page.title)
         }
         .frame(width: 820, height: 620)
+    }
+}
+
+/// FunSize's light/dark setting.
+enum AppAppearance: String, CaseIterable, Identifiable {
+    case auto, light, dark
+
+    var id: String { rawValue }
+    static let storageKey = "appAppearance"
+
+    /// Applies the setting to every window in the app.
+    func apply() {
+        switch self {
+        case .auto: NSApp.appearance = nil
+        case .light: NSApp.appearance = NSAppearance(named: .aqua)
+        case .dark: NSApp.appearance = NSAppearance(named: .darkAqua)
+        }
+    }
+
+    static var saved: AppAppearance {
+        AppAppearance(rawValue: UserDefaults.standard.string(forKey: storageKey) ?? "") ?? .auto
+    }
+}
+
+/// Settings › Appearance: light, dark, or matching the Mac (same tiles as CardStock).
+struct AppearanceSettingsView: View {
+    @AppStorage(AppAppearance.storageKey) private var appearance = AppAppearance.auto
+
+    var body: some View {
+        Form {
+            Section("Appearance") {
+                ChoiceCards(selection: $appearance, options: [
+                    .init(value: .auto, title: "Auto", systemImage: "circle.lefthalf.filled", help: "Match your Mac's setting"),
+                    .init(value: .light, title: "Light", systemImage: "sun.max.fill", help: "Always use light windows"),
+                    .init(value: .dark, title: "Dark", systemImage: "moon.fill", help: "Always use dark windows"),
+                ])
+                Text("Auto follows your Mac's setting in System Settings › Appearance.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .onChange(of: appearance) { _, new in new.apply() }
     }
 }
 

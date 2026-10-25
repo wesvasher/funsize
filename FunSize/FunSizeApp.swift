@@ -48,6 +48,10 @@ struct ProjectCommands: Commands {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        AppAppearance.saved.apply()
+    }
+
     /// Launch shows the Welcome window instead of an empty project.
     func applicationShouldOpenUntitledFile(_ sender: NSApplication) -> Bool { false }
 

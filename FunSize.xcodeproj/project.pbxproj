@@ -31,6 +31,7 @@
 		871186DD73DE6E127E5260B4 /* ProjectWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A41A516C059DC2D2A3903CC3 /* ProjectWindow.swift */; };
 		8B6AA344B0CB5AEE84CAB8FA /* ClipDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB4DD8807247B8B5A52F3CDB /* ClipDetailView.swift */; };
 		929123AB1A34B38FA29811CF /* ExportPresetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8409E81CC74F9D7773527F6 /* ExportPresetTests.swift */; };
+		9ADD0AEBB3901BEB2B4D67B0 /* ChoiceCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BE09AC32C97A417667C9D0D /* ChoiceCards.swift */; };
 		9D3D28EE07F5737FB7604092 /* PlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9166EF3510B260CAA486983A /* PlayerView.swift */; };
 		A260224BF4FA233E101EB31D /* ExportToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D33E36EAC0683EB9A11F58C /* ExportToolbar.swift */; };
 		B3560DB5809D2413A6EC5204 /* ClipPlayerController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EC7518137FCBF656A3159D6 /* ClipPlayerController.swift */; };
@@ -67,6 +68,7 @@
 		4148BEF3A1767837955280B0 /* FunSize-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "FunSize-Bridging-Header.h"; sourceTree = "<group>"; };
 		414974BBC0C760255B1E455C /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		4B5B76CB5392225664517BE6 /* EffectsPresets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EffectsPresets.swift; sourceTree = "<group>"; };
+		4BE09AC32C97A417667C9D0D /* ChoiceCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChoiceCards.swift; sourceTree = "<group>"; };
 		4BF2C60831286D49FE643741 /* FunSize.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FunSize.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4D0765D5527B6289E6319418 /* Clip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Clip.swift; sourceTree = "<group>"; };
 		5341E315744E495CB25A9D7E /* ExportPresetsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportPresetsSettingsView.swift; sourceTree = "<group>"; };
@@ -116,6 +118,7 @@
 		339EE759BE7933E28AF81036 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				4BE09AC32C97A417667C9D0D /* ChoiceCards.swift */,
 				CB4DD8807247B8B5A52F3CDB /* ClipDetailView.swift */,
 				7A05B9E294378093DEE90249 /* ClipInspectorView.swift */,
 				414974BBC0C760255B1E455C /* ContentView.swift */,
@@ -289,6 +292,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				6C09D17247C6278FD11AFF5B /* Bob.c in Sources */,
+				9ADD0AEBB3901BEB2B4D67B0 /* ChoiceCards.swift in Sources */,
 				4211809B12D78D91A0146CA3 /* Clip.swift in Sources */,
 				8B6AA344B0CB5AEE84CAB8FA /* ClipDetailView.swift in Sources */,
 				BCE132D50B25772745457397 /* ClipInspectorView.swift in Sources */,
