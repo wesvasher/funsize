@@ -16,6 +16,8 @@ struct ClipInspectorView: View {
     @State private var isNamingPreset = false
     @State private var presetName = ""
     @State private var isConfirmingReset = false
+    /// How far the sections' area runs under the scroll bar (see `sections`).
+    @State private var scrollBarOverhang: CGFloat = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -50,7 +52,7 @@ struct ClipInspectorView: View {
             .disabled(clip.isAtDefaults)
             .help("Put timing, captions, effects, LUT, look, and grade back to how they were when the video was imported")
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, Self.sidePadding)
         .padding(.top, 8)
         .padding(.bottom, 10)
         .background(.bar)
@@ -63,7 +65,7 @@ struct ClipInspectorView: View {
 
     private var sections: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: Self.sectionSpacing) {
                 if let subclip {
                     SubclipSection(subclip: subclip, clip: clip, clock: controller?.clock, showSource: showSource)
                 }
@@ -143,12 +145,21 @@ struct ClipInspectorView: View {
                     GradeSection(clip: clip, controller: controller)
                 }
             }
-            .padding(.horizontal, 20)
+            .padding(.leading, Self.sidePadding)
+            // The scroll bar always shows, but SwiftUI doesn't always narrow the content for it
+            // (it runs underneath until it scrolls). Pad by however much is hidden, so the
+            // sections always stop the same distance from the scroll bar.
+            .padding(.trailing, max(0, Self.sidePadding + scrollBarOverhang))
             .padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(ThinScrollers())
+            .background(ThinScrollers { scrollBarOverhang = $0 })
         }
     }
+
+    /// Space between the sections and the panel's sides.
+    static let sidePadding: CGFloat = 5
+    /// Space between one section and the next.
+    static let sectionSpacing: CGFloat = 5
 
     /// Frame timing: turning interlaced fields into frames.
     private var timing: some View {
@@ -726,7 +737,7 @@ private struct ColorPart<Choices: View>: View {
 
 // MARK: Building blocks
 
-/// A small uppercase heading over a two-column grid of rows.
+/// A rounded card with a small uppercase heading over a two-column grid of rows.
 /// Click the heading to collapse or expand it; the choice is remembered per section.
 private struct InspectorSection<Accessory: View, Content: View>: View {
     let title: String
@@ -742,21 +753,22 @@ private struct InspectorSection<Accessory: View, Content: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .center, spacing: 4) {
                 Button {
                     withAnimation(.snappy(duration: 0.2)) { isCollapsed.toggle() }
                 } label: {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 6) {
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 8, weight: .bold))
+                            .font(.system(size: 9, weight: .bold))
                             .rotationEffect(.degrees(isCollapsed ? 0 : 90))
-                            .frame(width: 8)
+                            .frame(width: 9)
                         Text(title.uppercased())
-                            .font(.caption2.weight(.semibold))
+                            .font(.caption.weight(.semibold))
                         Spacer(minLength: 4)
                     }
                     .foregroundStyle(.secondary)
+                    .padding(.vertical, 8)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -768,25 +780,41 @@ private struct InspectorSection<Accessory: View, Content: View>: View {
                     accessory
                 }
             }
-            Divider()
+            .padding(.horizontal, 10)
             if !isCollapsed {
+                Divider()
                 Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 8, verticalSpacing: 4) {
                     content
                 }
+                .padding(10)
                 .transition(.opacity)
             }
         }
+        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(.separator.opacity(0.6))
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }
 
 /// Gives the surrounding scroll view an always-visible scroller at the small size,
 /// instead of the regular-width one.
 private struct ThinScrollers: NSViewRepresentable {
+    /// Called with how far the content runs under the scroll bar (or, if negative, how far
+    /// short of it it stops), so the view can pad to keep a fixed gap beside the scroll bar.
+    var onOverhang: (CGFloat) -> Void = { _ in }
+
     func makeNSView(context: Context) -> NSView { Probe() }
-    func updateNSView(_ nsView: NSView, context: Context) {}
+    func updateNSView(_ nsView: NSView, context: Context) {
+        (nsView as? Probe)?.onOverhang = onOverhang
+    }
 
     private final class Probe: NSView {
         private var observer: NSObjectProtocol?
+        var onOverhang: (CGFloat) -> Void = { _ in }
+        private var lastOverhang: CGFloat?
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
@@ -801,6 +829,26 @@ private struct ThinScrollers: NSViewRepresentable {
                     }
                 }
             }
+        }
+
+        override func layout() {
+            super.layout()
+            measure()
+        }
+
+        override func setFrameSize(_ newSize: NSSize) {
+            super.setFrameSize(newSize)
+            measure()
+        }
+
+        /// The content's right edge compared with the visible area's (which ends at the scroll bar).
+        private func measure() {
+            guard let clip = enclosingScrollView?.contentView else { return }
+            let overhang = (convert(bounds, to: clip).maxX - clip.bounds.maxX).rounded()
+            guard overhang != lastOverhang else { return }
+            lastOverhang = overhang
+            let report = onOverhang
+            DispatchQueue.main.async { report(overhang) }
         }
 
         private func apply() {
