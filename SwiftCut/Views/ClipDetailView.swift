@@ -33,29 +33,8 @@ struct ClipDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Video toolbar: picture size, then actions and zoom on the right.
-            HStack(spacing: 12) {
-                if clip.outputSize != .zero {
-                    Text("\(Int(clip.outputSize.width)) × \(Int(clip.outputSize.height))")
-                        .font(.callout.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 8)
-                Button("Copy Frame", systemImage: "doc.on.doc", action: copyFrame)
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.borderless)
-                    .disabled(!clip.hasVideo)
-                    .help("Copy the frame on screen to the clipboard, at full size")
-                Button("Export Images", systemImage: "photo.badge.arrow.down", action: exportImages)
-                    .labelStyle(.iconOnly)
-                    .buttonStyle(.borderless)
-                    .disabled(!clip.hasVideo || isExportingImages)
-                    .help("Save the full frame, and the part in view, as PNG images in the project's folder")
-                ViewerZoomControl(zoom: $zoom)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 5)
-            .background(.bar)
+            VideoToolbar(pictureSize: clip.outputSize, zoom: $zoom, canCopy: clip.hasVideo,
+                         isExporting: isExportingImages, copyFrame: copyFrame, exportImages: exportImages)
 
             Divider()
 
@@ -129,60 +108,23 @@ struct ClipDetailView: View {
 extension ClipDetailView {
     /// Copies the frame on screen and says so in a toast.
     private func copyFrame() {
-        let clock = controller.clock
-        let frame = controller.currentFrameNumber
-        let timecode = clock.timecode(seconds: controller.currentTime)
-        let showingOriginal = controller.isShowingOriginal
+        let describe = "Frame \(controller.currentFrameNumber.formatted()) (\(controller.clock.timecode(seconds: controller.currentTime)))"
+        let suffix = controller.isShowingOriginal ? ", without effects." : ", as shown in the viewer."
         Task {
-            do {
-                let image = try await controller.currentFrameImage()
-                try await FrameClipboard.copy(image)
-                var detail = "Frame \(frame.formatted()) (\(timecode)) at \(image.width) × \(image.height)"
-                detail += showingOriginal ? ", without effects." : ", as shown in the viewer."
-                toast = Toast(systemImage: "doc.on.clipboard", title: "Frame Copied to Clipboard",
-                              detail: detail + " Paste it into any app.")
-            } catch {
-                toast = Toast(systemImage: "exclamationmark.triangle.fill", title: "Couldn't Copy Frame",
-                              detail: error.localizedDescription, isError: true)
-            }
+            toast = await VideoFrameActions.copy(grab: controller.currentFrameImage, describe: describe, suffix: suffix)
         }
     }
-}
 
-extension ClipDetailView {
-    /// Saves two PNGs next to the project: the whole frame at full size, and the part in the
-    /// viewer as it looks on screen (at its on-screen size).
+    /// Saves the whole frame and the part in view as PNGs next to the project.
     private func exportImages() {
-        let frame = controller.currentFrameNumber
-        let view = visibleView
-        let zoomTitle = zoom.title
-        let baseName = "\(subclip?.name ?? clip.name) Frame \(frame)"
+        let baseName = "\(subclip?.name ?? clip.name) Frame \(controller.currentFrameNumber)"
+        let view = visibleView, zoomTitle = zoom.title
         isExportingImages = true
         Task {
             defer { isExportingImages = false }
-            do {
-                // Grab the frame first, so it's the one on screen when the button was clicked.
-                let image = try await controller.currentFrameImage()
-                guard let folder = await store.projectFolderForImages() else { return }
-                let pixels = view.pixels == .zero
-                    ? CGSize(width: image.width, height: image.height)
-                    : view.pixels
-                let saved = try await Task.detached(priority: .userInitiated) {
-                    let viewImage = try FrameClipboard.crop(image, to: view.fraction, size: pixels)
-                    return (try FrameClipboard.savePNG(image, named: baseName, in: folder),
-                            try FrameClipboard.savePNG(viewImage, named: "\(baseName) View \(zoomTitle)", in: folder))
-                }.value
-                toast = Toast(
-                    systemImage: "photo.on.rectangle",
-                    title: "Exported 2 Images",
-                    detail: "“\(saved.0.lastPathComponent)” (\(image.width) × \(image.height)) and “\(saved.1.lastPathComponent)” (the view) are in “\(folder.lastPathComponent)”.",
-                    action: ToastAction(title: "Show in Finder") {
-                        NSWorkspace.shared.activateFileViewerSelecting([saved.0, saved.1])
-                    }
-                )
-            } catch {
-                toast = Toast(systemImage: "exclamationmark.triangle.fill", title: "Couldn't Export Images",
-                              detail: error.localizedDescription, isError: true)
+            if let result = await VideoFrameActions.exportImages(grab: controller.currentFrameImage, baseName: baseName,
+                                                                 view: view, zoomTitle: zoomTitle, store: store) {
+                toast = result
             }
         }
     }

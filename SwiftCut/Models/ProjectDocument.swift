@@ -16,6 +16,8 @@ nonisolated struct ProjectFile: Codable, Equatable, Sendable {
     var clips: [ClipRecord] = []
     var subclips: [SubclipRecord] = []
     var timeline: [TimelineRecord] = []
+    /// The timeline's frame size, frame rate, and fit.
+    var timelineSettings = TimelineSettings()
 
     init() {}
 
@@ -29,6 +31,7 @@ nonisolated struct ProjectFile: Codable, Equatable, Sendable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         clips = try c.decodeIfPresent([ClipRecord].self, forKey: .clips) ?? []
         subclips = try c.decodeIfPresent([SubclipRecord].self, forKey: .subclips) ?? []
+        timelineSettings = try c.decodeIfPresent(TimelineSettings.self, forKey: .timelineSettings) ?? TimelineSettings()
         // Version 1 trimmed each timeline item; those trims become subclips.
         let names = Dictionary(clips.map { ($0.id, URL(filePath: $0.path).deletingPathExtension().lastPathComponent) },
                                uniquingKeysWith: { first, _ in first })

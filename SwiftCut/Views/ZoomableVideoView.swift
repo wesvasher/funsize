@@ -5,7 +5,13 @@ import SwiftUI
 /// The video at the chosen zoom, cut off at the viewer's edges. When the picture is bigger
 /// than the viewer, Shift-drag moves it around. Click to play or pause.
 struct ZoomableVideoView: View {
-    let controller: ClipPlayerController
+    let player: AVPlayer
+    /// Still frames shown over the video: one covering version switches (Show Original), and
+    /// the quick color preview while a color slider is dragged. The timeline has neither.
+    var freezeFrame: CGImage? = nil
+    var colorProxy: CGImage? = nil
+    /// Click on the picture.
+    var togglePlayPause: () -> Void = {}
     /// The picture's size in pixels.
     let pictureSize: CGSize
     let zoom: ViewerZoom
@@ -37,7 +43,7 @@ struct ZoomableVideoView: View {
                 .overlay {
                     Color.clear
                         .contentShape(Rectangle())
-                        .onTapGesture { controller.togglePlayPause() }
+                        .onTapGesture { togglePlayPause() }
                         // Alongside the click: a drag that moves cancels the click on its own.
                         .simultaneousGesture(panGesture(offset: offset, display: display, viewport: viewport),
                                              including: canPan ? .all : .subviews)
@@ -48,7 +54,7 @@ struct ZoomableVideoView: View {
                 .overlay(alignment: .bottomTrailing) {
                     // Zoomed in: a map of the whole picture, with the part in view outlined.
                     if canPan {
-                        ViewerNavigator(player: controller.player, offset: offset, display: display, viewport: viewport,
+                        ViewerNavigator(player: player, offset: offset, display: display, viewport: viewport,
                                         close: zoomToFit) { newOffset in
                             pan = CGSize(width: newOffset.width / display.width, height: newOffset.height / display.height)
                         }
@@ -74,16 +80,16 @@ struct ZoomableVideoView: View {
     /// The video, plus the still frames that cover it at times. They all share one frame,
     /// so they stay lined up at every zoom.
     private var picture: some View {
-        PlayerLayerView(player: controller.player)
+        PlayerLayerView(player: player)
             .overlay {
                 // Still frame that covers version switches (Show Original), so there's no black flash.
-                if let frame = controller.freezeFrame {
+                if let frame = freezeFrame {
                     still(frame)
                 }
             }
             .overlay {
                 // Quick, smaller preview of the color while a color slider is dragged.
-                if let proxy = controller.colorProxy {
+                if let proxy = colorProxy {
                     still(proxy)
                 }
             }
@@ -373,4 +379,15 @@ private final class ZoomBox: NSObject {
 
 private extension ViewerZoom {
     var boxed: ZoomBox { ZoomBox(self) }
+}
+
+extension ZoomableVideoView {
+    /// The clip viewer's video, with its still-frame overlays.
+    init(controller: ClipPlayerController, pictureSize: CGSize, zoom: ViewerZoom, pan: Binding<CGSize>,
+         zoomToFit: @escaping () -> Void = {},
+         reportView: @escaping (_ fraction: CGRect, _ pixels: CGSize) -> Void = { _, _ in }) {
+        self.init(player: controller.player, freezeFrame: controller.freezeFrame, colorProxy: controller.colorProxy,
+                  togglePlayPause: controller.togglePlayPause, pictureSize: pictureSize, zoom: zoom, pan: pan,
+                  zoomToFit: zoomToFit, reportView: reportView)
+    }
 }

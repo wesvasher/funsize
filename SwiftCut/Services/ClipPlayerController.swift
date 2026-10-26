@@ -380,12 +380,7 @@ final class ClipPlayerController {
         guard let item = player.currentItem, clip?.hasVideo == true else {
             throw EnhanceError.failed("There's no video frame to copy.")
         }
-        nonisolated(unsafe) let generator = AVAssetImageGenerator(asset: item.asset)
-        generator.videoComposition = item.videoComposition
-        generator.appliesPreferredTrackTransform = true
-        generator.requestedTimeToleranceBefore = .zero
-        generator.requestedTimeToleranceAfter = .zero
-        return try await generator.image(at: item.currentTime()).image
+        return try await FrameClipboard.currentFrame(of: item)
     }
 
     private func install(_ item: AVPlayerItem) {

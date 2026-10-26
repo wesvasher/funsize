@@ -2,8 +2,9 @@ import AVFoundation
 
 /// Joins timeline segments into one playable/exportable composition.
 ///
-/// Clips with different sizes or rotations are scaled to fit the first
-/// clip's frame, centered, with black bars where needed.
+/// The frame size and rate come from the timeline settings; on Automatic, the size is the
+/// first clip's and the rate follows the fastest clip. Clips of a different size or rotation
+/// are scaled to fit (with black bars) or fill (cropping) the frame, centered.
 enum CompositionBuilder {
     struct Segment {
         let url: URL
@@ -29,7 +30,7 @@ enum CompositionBuilder {
         }
     }
 
-    static func build(_ segments: [Segment]) async throws -> Result {
+    static func build(_ segments: [Segment], settings: TimelineSettings = TimelineSettings()) async throws -> Result {
         let composition = AVMutableComposition()
         guard
             let videoTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid),
@@ -66,8 +67,7 @@ enum CompositionBuilder {
                     frameDuration = minFrame
                 }
                 if renderSize == nil {
-                    let size = geometry.displaySize
-                    renderSize = CGSize(width: evenFloor(size.width), height: evenFloor(size.height))
+                    renderSize = settings.renderSize(firstClip: geometry.displaySize)
                 }
             } else {
                 videoTrack.insertEmptyTimeRange(CMTimeRange(start: cursor, duration: range.duration))
@@ -89,7 +89,8 @@ enum CompositionBuilder {
             var layer = AVVideoCompositionLayerInstruction.Configuration(assetTrack: videoTrack)
             for placement in placements {
                 layer.setTransform(
-                    fitTransform(natural: placement.naturalSize, preferred: placement.transform, into: renderSize),
+                    fitTransform(natural: placement.naturalSize, preferred: placement.transform, into: renderSize,
+                                 fill: settings.fit == .fill),
                     at: placement.at
                 )
             }
@@ -98,15 +99,18 @@ enum CompositionBuilder {
                 timeRange: CMTimeRange(start: .zero, duration: cursor)
             ))
             let shortest = CMTime(value: 1, timescale: 120), longest = CMTime(value: 1, timescale: 10)
-            let duration = min(max(frameDuration ?? CMTime(value: 1, timescale: 30), shortest), longest)
+            let duration = settings.frameRate.frameDuration
+                ?? min(max(frameDuration ?? CMTime(value: 1, timescale: 30), shortest), longest)
             var config = AVVideoComposition.Configuration(
                 frameDuration: duration,
                 instructions: [instruction],
                 renderSize: renderSize
             )
-            // Output a frame for each source frame, at its exact time. Without this the
-            // compositor drops a frame near the start and drifts on 29.97 video.
-            config.sourceTrackIDForFrameTiming = videoTrack.trackID
+            if settings.frameRate == .automatic {
+                // Output a frame for each source frame, at its exact time. Without this the
+                // compositor drops a frame near the start and drifts on 29.97 video.
+                config.sourceTrackIDForFrameTiming = videoTrack.trackID
+            }
             videoComposition = AVVideoComposition(configuration: config)
         } else {
             composition.removeTrack(videoTrack)
@@ -119,19 +123,18 @@ enum CompositionBuilder {
         return Result(composition: composition, videoComposition: videoComposition, duration: cursor.seconds)
     }
 
-    /// Applies the clip's shape correction and rotation, then scales and centers it inside the render frame.
+    /// Applies the clip's shape correction and rotation, then scales and centers it inside the render frame:
+    /// all of it showing (`fill` false), or covering the frame with its edges cut off (`fill` true).
     /// `natural` is the stored pixel size of the source frames.
-    static func fitTransform(natural: CGSize, preferred: CGAffineTransform, into render: CGSize) -> CGAffineTransform {
+    static func fitTransform(natural: CGSize, preferred: CGAffineTransform, into render: CGSize,
+                             fill: Bool = false) -> CGAffineTransform {
         let rect = CGRect(origin: .zero, size: natural).applying(preferred)
         var transform = preferred.concatenating(CGAffineTransform(translationX: -rect.minX, y: -rect.minY))
-        let scale = min(render.width / rect.width, render.height / rect.height)
+        let scales = (render.width / rect.width, render.height / rect.height)
+        let scale = fill ? max(scales.0, scales.1) : min(scales.0, scales.1)
         transform = transform.concatenating(CGAffineTransform(scaleX: scale, y: scale))
         let offsetX = (render.width - rect.width * scale) / 2
         let offsetY = (render.height - rect.height * scale) / 2
         return transform.concatenating(CGAffineTransform(translationX: offsetX, y: offsetY))
-    }
-
-    private static func evenFloor(_ value: CGFloat) -> CGFloat {
-        max(2, (value / 2).rounded(.down) * 2)
     }
 }

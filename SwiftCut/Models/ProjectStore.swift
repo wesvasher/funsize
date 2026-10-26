@@ -12,6 +12,8 @@ final class ProjectStore {
     /// Parts of source videos. Shown under their source in the sidebar.
     var subclips: [Subclip] = []
     var timeline: [TimelineItem] = []
+    /// The timeline's frame size, frame rate, and fit (timeline inspector's Format section).
+    var timelineSettings = TimelineSettings()
     var selection: Set<SidebarItem> = []
     var selectedTimelineItemID: UUID?
     var isImporting = false
@@ -105,7 +107,7 @@ final class ProjectStore {
         timeline.map { item in
             let range = trimRange(of: item)
             return "\(item.id)|\(range.lowerBound)|\(range.upperBound)"
-        }
+        } + ["\(timelineSettings)"]
     }
 
     // MARK: Importing
@@ -255,11 +257,13 @@ final class ProjectStore {
 
     /// Everything a project file stores, built from the current state.
     var projectFile: ProjectFile {
-        ProjectFile(
+        var file = ProjectFile(
             clips: clips.map(\.record),
             subclips: subclips.map(\.record),
             timeline: timeline.map { .init(id: $0.id, clipID: $0.clipID, subclipID: $0.subclipID) }
         )
+        file.timelineSettings = timelineSettings
+        return file
     }
 
     /// Brings the store in line with a project file: when opening it, and after Undo/Redo.
@@ -285,6 +289,7 @@ final class ProjectStore {
 
         let items = file.timeline.map { TimelineItem(id: $0.id, clipID: $0.clipID, subclipID: $0.subclipID) }
         if items != timeline { timeline = items }
+        if file.timelineSettings != timelineSettings { timelineSettings = file.timelineSettings }
 
         pruneSelection()
     }
@@ -430,8 +435,14 @@ final class ProjectStore {
         }
     }
 
+    /// The timeline's frame size in pixels, from its settings (Automatic uses the first clip with video).
+    var timelineFrameSize: CGSize {
+        let first = timeline.lazy.compactMap { self.clip(for: $0.clipID) }.first { $0.hasVideo && $0.displaySize != .zero }
+        return timelineSettings.renderSize(firstClip: first?.displaySize)
+    }
+
     func buildTimeline() async throws -> CompositionBuilder.Result {
-        try await CompositionBuilder.build(timelineSegments)
+        try await CompositionBuilder.build(timelineSegments, settings: timelineSettings)
     }
 
     var canExport: Bool {

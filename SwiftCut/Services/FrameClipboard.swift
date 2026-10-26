@@ -1,9 +1,21 @@
+import AVFoundation
 import AppKit
 import ImageIO
 import UniformTypeIdentifiers
 
 /// Puts still frames on the clipboard.
 enum FrameClipboard {
+    /// The player item's frame at its current time, at full size, as the viewer shows it
+    /// (through its video composition: effects, color, timeline layout).
+    static func currentFrame(of item: AVPlayerItem) async throws -> CGImage {
+        nonisolated(unsafe) let generator = AVAssetImageGenerator(asset: item.asset)
+        generator.videoComposition = item.videoComposition
+        generator.appliesPreferredTrackTransform = true
+        generator.requestedTimeToleranceBefore = .zero
+        generator.requestedTimeToleranceAfter = .zero
+        return try await generator.image(at: item.currentTime()).image
+    }
+
     /// Copies `image` as PNG (full quality, keeps its color space), plus TIFF for apps that only
     /// read that. The encoding runs off the main thread: a 4K frame takes a moment.
     static func copy(_ image: CGImage, to pasteboard: NSPasteboard = .general) async throws {
