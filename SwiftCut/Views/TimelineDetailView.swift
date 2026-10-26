@@ -29,7 +29,7 @@ struct TimelineDetailView: View {
         .clipped()
         .inspector(isPresented: inspectorShown) {
             TimelineInspectorView()
-                .inspectorColumnWidth(min: 240, ideal: 270, max: 360)
+                .inspectorColumnWidth(300)
         }
         .toolbar {
             ToolbarItem {

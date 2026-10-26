@@ -39,7 +39,7 @@ struct ClipInspectorView: View {
                 ) { pressed in
                     controller?.showOriginal(pressed)
                 }
-                .help("Hold to see the video without its effects, LUT, and grade. Release to see them again.")
+                .help("Hold to see the video without its effects, LUT, look, and grade. Release to see them again.")
             }
             Button {
                 isConfirmingReset = true
@@ -48,16 +48,16 @@ struct ClipInspectorView: View {
                     .frame(maxWidth: .infinity)
             }
             .disabled(clip.isAtDefaults)
-            .help("Put timing, captions, effects, LUT, and grade back to how they were when the video was imported")
+            .help("Put timing, captions, effects, LUT, look, and grade back to how they were when the video was imported")
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 20)
         .padding(.top, 8)
         .padding(.bottom, 10)
         .background(.bar)
         .confirmationDialog("Reset all settings for “\(clip.name)”?", isPresented: $isConfirmingReset) {
             Button("Reset All", role: .destructive) { clip.resetAll() }
         } message: {
-            Text("Timing, captions, effects, LUT, and grade go back to how they were when the video was imported. Its subclips share these settings, so they change too. In and out marks are kept. You can undo this with Edit › Undo.")
+            Text("Timing, captions, effects, LUT, look, and grade go back to how they were when the video was imported. Its subclips share these settings, so they change too. In and out marks are kept. You can undo this with Edit › Undo.")
         }
     }
 
@@ -143,7 +143,7 @@ struct ClipInspectorView: View {
                     GradeSection(clip: clip, controller: controller)
                 }
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 20)
             .padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(ThinScrollers())
@@ -274,7 +274,8 @@ struct ClipInspectorView: View {
         }
     }
 
-    /// Color: a LUT for grading or converting Apple Log, with a shortcut to Settings › Color.
+    /// Color: a LUT (usually converting log footage), then a creative look, each with an
+    /// on/off switch. Shortcut to Settings › Color.
     private var color: some View {
         InspectorSection("Color") {
             Button {
@@ -290,51 +291,41 @@ struct ClipInspectorView: View {
                 if let log = clip.logFormat {
                     InspectorRow("Footage", log)
                 }
-                GridRow {
-                    InspectorLabel("LUT")
-                    lutMenu
-                }
-                if clip.lutID != nil, clip.lut == nil {
-                    GridRow {
-                        Label("This LUT is no longer in your library.", systemImage: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
-                            .gridCellColumns(2)
+                ColorPart(title: "LUT", noun: "LUT", chosenID: $clip.lutID, chosen: clip.lut,
+                          intensity: $clip.lutIntensity, isOn: $clip.lutEnabled, controller: controller) {
+                    Section("Apple Log") { items(library.appleLog, selection: $clip.lutID, isOn: $clip.lutEnabled) }
+                    if !library.imported.isEmpty {
+                        Section("Imported") { items(library.imported, selection: $clip.lutID, isOn: $clip.lutEnabled) }
                     }
+                    Divider()
+                    Button("Manage LUTs…") { openColorSettings() }
                 }
-                if let lut = clip.lut {
-                    GridRow {
-                        Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
-                        Image(nsImage: LUTSwatch.image(for: lut))
-                            .resizable()
-                            .frame(width: 96, height: 28)
-                            .clipShape(RoundedRectangle(cornerRadius: 3))
-                            .help(lut.summary)
-                    }
-                    GridRow {
-                        InspectorLabel("Intensity")
-                        HStack(spacing: 6) {
-                            Slider(value: $clip.lutIntensity, in: 0...1) { editing in
-                                editing ? controller?.beginColorAdjustment() : controller?.endColorAdjustment()
-                            }
-                            Text("\(Int((clip.lutIntensity * 100).rounded()))%")
-                                .monospacedDigit()
-                                .frame(width: 34, alignment: .trailing)
-                        }
-                    }
-                }
+                .help("A LUT converts or grades the video. Applies first.")
                 if clip.logFormat != nil, clip.lutID == nil {
                     GridRow {
                         Text("This clip is log footage, so it looks flat until it's converted.")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
                             .gridCellColumns(2)
                     }
                     GridRow {
                         Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
-                        Button("Convert to Rec. 709") { clip.lutID = ColorLUT.builtIns[0].id }
+                        Button("Convert to Rec. 709") {
+                            clip.lutID = ColorLUT.builtIns[0].id
+                            clip.lutEnabled = true
+                        }
                     }
                 }
+                ColorPart(title: "Look", noun: "look", chosenID: $clip.lookID, chosen: clip.look,
+                          intensity: $clip.lookIntensity, isOn: $clip.lookEnabled, controller: controller) {
+                    Section("Looks") { items(library.looks, selection: $clip.lookID, isOn: $clip.lookEnabled) }
+                    if !library.imported.isEmpty {
+                        Section("Imported") { items(library.imported, selection: $clip.lookID, isOn: $clip.lookEnabled) }
+                    }
+                    Divider()
+                    Button("Manage LUTs…") { openColorSettings() }
+                }
+                .help("A creative look. Applies after the LUT and before the Grade.")
             } else {
                 GridRow {
                     Text(clip.isRotated ? "Not available for rotated video yet" : "None available for this clip")
@@ -345,26 +336,14 @@ struct ClipInspectorView: View {
         }
     }
 
-    private var lutMenu: some View {
-        Menu {
-            Toggle("None", isOn: Binding(get: { clip.lutID == nil }, set: { if $0 { clip.lutID = nil } }))
-            Section("Apple Log") { lutItems(library.appleLog) }
-            Section("Looks") { lutItems(library.looks) }
-            if !library.imported.isEmpty {
-                Section("Imported") { lutItems(library.imported) }
-            }
-            Divider()
-            Button("Manage LUTs…") { openColorSettings() }
-        } label: {
-            Text(clip.lut?.name ?? (clip.lutID == nil ? "None" : "Missing LUT"))
-        }
-        .fixedSize()
-        .help("Choose a LUT to grade this clip")
-    }
-
-    private func lutItems(_ luts: [ColorLUT]) -> some View {
+    /// Menu items that choose a LUT. Choosing one also turns its switch on.
+    private func items(_ luts: [ColorLUT], selection: Binding<UUID?>, isOn: Binding<Bool>) -> some View {
         ForEach(luts) { lut in
-            Toggle(lut.name, isOn: Binding(get: { clip.lutID == lut.id }, set: { if $0 { clip.lutID = lut.id } }))
+            Toggle(lut.name, isOn: Binding(get: { selection.wrappedValue == lut.id }, set: {
+                guard $0 else { return }
+                selection.wrappedValue = lut.id
+                isOn.wrappedValue = true
+            }))
         }
     }
 
@@ -538,7 +517,7 @@ private struct GradeSection: View {
                 group("Light", Self.light)
                 group("Color", Self.color)
                 GridRow {
-                    Text("Double-click a name to reset it. Applies after the LUT, to this video and all of its subclips.")
+                    Text("Double-click a name to reset it. Applies after the LUT and look, to this video and all of its subclips.")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -662,6 +641,86 @@ private struct SubclipSection: View {
     private func lastFrame(_ end: Double) -> String {
         if let clock, clock.fps > 0 { return clock.timecode(frames: max(0, clock.frameIndex(at: end) - 1)) }
         return end.preciseTimecode
+    }
+}
+
+/// One part of the Color section (LUT or Look): a heading with an on/off switch,
+/// a menu to choose, a swatch, and an intensity slider.
+private struct ColorPart<Choices: View>: View {
+    let title: String
+    /// Lowercase name for messages, e.g. "look".
+    let noun: String
+    @Binding var chosenID: UUID?
+    let chosen: ColorLUT?
+    @Binding var intensity: Double
+    @Binding var isOn: Bool
+    let controller: ClipPlayerController?
+    @ViewBuilder let choices: () -> Choices
+
+    var body: some View {
+        GridRow {
+            HStack {
+                Text(title)
+                    .font(.callout.weight(.semibold))
+                Spacer()
+                // With nothing chosen there's nothing to turn on, so the switch shows off.
+                Toggle(title, isOn: Binding(get: { isOn && chosenID != nil }, set: { isOn = $0 }))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .disabled(chosenID == nil)
+                    .help(chosenID == nil ? "Choose a \(noun) first" : (isOn ? "Turn the \(noun) off" : "Turn the \(noun) on"))
+                    .accessibilityLabel("Use \(title)")
+            }
+            .padding(.top, 6)
+            .gridCellColumns(2)
+        }
+        GridRow {
+            InspectorLabel(title)
+            // Fills the column; long names are shortened to fit.
+            Menu {
+                Toggle("None", isOn: Binding(get: { chosenID == nil }, set: { if $0 { chosenID = nil } }))
+                choices()
+            } label: {
+                Text(chosen?.name ?? (chosenID == nil ? "None" : "Missing \(title)"))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .help(chosen?.name ?? "")
+        }
+        if let chosen {
+            GridRow {
+                Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
+                Image(nsImage: LUTSwatch.image(for: chosen))
+                    .resizable()
+                    .frame(width: 96, height: 28)
+                    .clipShape(RoundedRectangle(cornerRadius: 3))
+                    .opacity(isOn ? 1 : 0.4)
+                    .help(chosen.summary)
+            }
+        }
+        if chosenID != nil, chosen == nil {
+            GridRow {
+                Label("This \(noun) is no longer in your library.", systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .gridCellColumns(2)
+            }
+        }
+        if chosen != nil {
+            GridRow {
+                InspectorLabel("Intensity")
+                HStack(spacing: 6) {
+                    Slider(value: $intensity, in: 0...1) { editing in
+                        editing ? controller?.beginColorAdjustment() : controller?.endColorAdjustment()
+                    }
+                    Text("\(Int((intensity * 100).rounded()))%")
+                        .monospacedDigit()
+                        .frame(width: 34, alignment: .trailing)
+                }
+                .disabled(!isOn)
+            }
+        }
     }
 }
 

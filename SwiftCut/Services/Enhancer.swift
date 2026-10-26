@@ -40,21 +40,23 @@ nonisolated struct EnhanceSettings: Hashable, Sendable {
     var sharpen: Float = 0
     /// Color LUT (Color section), applied before the grade and sharpening.
     var lut: AppliedLUT?
-    /// Color correction (Grade section), applied after the LUT. `nil` when untouched.
+    /// Creative look (Color section), applied after the LUT.
+    var look: AppliedLUT?
+    /// Color correction (Grade section), applied after the LUT and look. `nil` when untouched.
     var grade: ColorGrade?
 
     var isActive: Bool {
         fieldOrder != nil || hasLook
     }
 
-    /// Anything "Show Original" can turn off: effects, a LUT, or a grade.
+    /// Anything "Show Original" can turn off: effects, a LUT, a look, or a grade.
     var hasLook: Bool {
-        hasEffects || lut != nil || grade != nil
+        hasEffects || colorLook != nil
     }
 
-    /// The LUT and grade together, or `nil` when there's neither.
+    /// The LUT, look, and grade together, or `nil` when there are none.
     var colorLook: ColorLook? {
-        lut == nil && grade == nil ? nil : ColorLook(lut: lut, grade: grade ?? ColorGrade())
+        lut == nil && look == nil && grade == nil ? nil : ColorLook(lut: lut, look: look, grade: grade ?? ColorGrade())
     }
 
     /// What needs a new preview when it changes. The LUT and grade don't: the preview follows
@@ -63,6 +65,7 @@ nonisolated struct EnhanceSettings: Hashable, Sendable {
         var copy = self
         let hasColor = colorLook != nil
         copy.lut = nil
+        copy.look = nil
         copy.grade = hasColor ? ColorGrade() : nil
         return copy
     }

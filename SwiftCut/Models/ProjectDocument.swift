@@ -75,6 +75,10 @@ nonisolated struct ProjectFile: Codable, Equatable, Sendable {
         var sharpen = 0.0
         var lutID: UUID?
         var lutIntensity = 1.0
+        var lutEnabled = true
+        var lookID: UUID?
+        var lookIntensity = 1.0
+        var lookEnabled = true
         var grade = ColorGrade()
 
         init(id: UUID = UUID(), url: URL, bookmark: Data?) {
@@ -100,6 +104,17 @@ nonisolated struct ProjectFile: Codable, Equatable, Sendable {
             sharpen = try c.decodeIfPresent(Double.self, forKey: .sharpen) ?? 0
             lutID = try c.decodeIfPresent(UUID.self, forKey: .lutID)
             lutIntensity = try c.decodeIfPresent(Double.self, forKey: .lutIntensity) ?? 1
+            lutEnabled = try c.decodeIfPresent(Bool.self, forKey: .lutEnabled) ?? true
+            lookID = try c.decodeIfPresent(UUID.self, forKey: .lookID)
+            lookIntensity = try c.decodeIfPresent(Double.self, forKey: .lookIntensity) ?? 1
+            lookEnabled = try c.decodeIfPresent(Bool.self, forKey: .lookEnabled) ?? true
+            // Projects from before Looks had their own menu kept a built-in look in the LUT slot.
+            if lookID == nil, let id = lutID, ColorLUT.builtIns.first(where: { $0.id == id })?.kind == .look {
+                lookID = id
+                lookIntensity = lutIntensity
+                lutID = nil
+                lutIntensity = 1
+            }
             grade = try c.decodeIfPresent(ColorGrade.self, forKey: .grade) ?? ColorGrade()
         }
     }

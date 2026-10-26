@@ -196,8 +196,40 @@ final class ClipPlayerController {
         if isAdjustingColor, !isPlaying {
             // While a slider is dragged, the quick preview shows changes; the full frame catches up on release.
             renderProxy()
+        } else if !isPlaying {
+            // A one-off change (a menu or switch): show it with the quick preview right away,
+            // since a full-size frame (or a rebuild, when color turns on or off) takes a moment.
+            previewColorChange()
         } else {
             redrawFrame()
+        }
+    }
+
+    /// Shows the current color on the quick preview, then swaps in the full frame once it's ready.
+    private func previewColorChange() {
+        guard let clip else { return }
+        adjustmentCount += 1
+        let change = adjustmentCount
+        isAdjustingColor = true
+        let time = currentTime
+        Task {
+            if proxyBase?.clipID != clip.id || proxyBase?.time != time {
+                await loadProxyBase(for: clip, at: time)
+            } else {
+                renderProxy()
+            }
+            // Let the quick preview finish drawing.
+            for _ in 0..<50 where isRenderingProxy {
+                try? await Task.sleep(for: .milliseconds(10))
+            }
+            guard change == adjustmentCount else { return }
+            isAdjustingColor = false
+            guard colorProxy != nil else {
+                // No quick preview (the frame couldn't be read): just redraw the full frame.
+                redrawFrame()
+                return
+            }
+            await finishColorAdjustment(change)
         }
     }
 
@@ -206,10 +238,17 @@ final class ClipPlayerController {
         guard appliedSettings.colorLook != nil, let item = effectsItem else { return }
         // The saved still of this version shows the old color.
         storedFrames[ObjectIdentifier(item)] = nil
-        // A paused player doesn't draw again by itself; seeking to the same spot redraws the frame.
         if !isPlaying, player.currentItem === item {
-            player.seek(to: item.currentTime(), toleranceBefore: .zero, toleranceAfter: .zero)
+            Self.rerender(item)
         }
+    }
+
+    /// Makes a paused player draw its frame again with the current color. Seeking to the same
+    /// spot isn't enough (the player keeps the frame it has), but a new copy of the composition is.
+    private static func rerender(_ item: AVPlayerItem) {
+        guard let composition = item.videoComposition,
+              let copy = composition.mutableCopy() as? AVVideoComposition else { return }
+        item.videoComposition = copy
     }
 
     // MARK: Quick color preview
@@ -262,7 +301,8 @@ final class ClipPlayerController {
         generator.requestedTimeToleranceAfter = .zero
         guard let (frame, _) = try? await generator.image(at: CMTime(seconds: time, preferredTimescale: 90_000)),
               self.clip?.id == clip.id else { return }
-        proxyBase = (clip.id, time, ProxyImage(image: CIImage(cgImage: frame, options: [.colorSpace: Self.proxySpace])))
+        // Keep the frame's own color space: relabeling it as Rec. 709 shifts the colors.
+        proxyBase = (clip.id, time, ProxyImage(image: CIImage(cgImage: frame)))
         if isAdjustingColor { renderProxy() }
     }
 
@@ -302,7 +342,7 @@ final class ClipPlayerController {
         }
         if let item = effectsItem, player.currentItem === item, !isPlaying {
             storedFrames[ObjectIdentifier(item)] = nil
-            await player.seek(to: item.currentTime(), toleranceBefore: .zero, toleranceAfter: .zero)
+            Self.rerender(item)
             if let output = frameOutputs[ObjectIdentifier(item)] {
                 for _ in 0..<100 where !output.hasNewPixelBuffer(forItemTime: item.currentTime()) {
                     try? await Task.sleep(for: .milliseconds(10))

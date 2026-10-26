@@ -76,16 +76,25 @@ final class Clip: Identifiable {
 
     /// "Apple Log" or "Apple Log 2" when the file says it's log footage.
     var logFormat: String?
-    /// The LUT chosen in the Color section, or `nil` for none.
+    /// The LUT chosen in the Color section's LUT part (usually a conversion, like Apple Log), or `nil` for none.
     var lutID: UUID?
     /// 0…1: how strongly the LUT applies.
     var lutIntensity = 1.0
+    /// The LUT switch: off keeps the choice but doesn't apply it.
+    var lutEnabled = true
+
+    /// The creative look chosen in the Color section's Look part, applied after the LUT.
+    var lookID: UUID?
+    var lookIntensity = 1.0
+    var lookEnabled = true
 
     /// Color correction from the Grade section, applied after the LUT.
     var grade = ColorGrade()
 
     /// The chosen LUT, if it's still in the library.
     var lut: ColorLUT? { LUTLibrary.shared.lut(id: lutID) }
+    /// The chosen look, if it's still in the library.
+    var look: ColorLUT? { LUTLibrary.shared.lut(id: lookID) }
 
     // MARK: Enhancement
 
@@ -108,7 +117,8 @@ final class Clip: Identifiable {
             denoiseStrength: canEnhance && denoise ? Float(denoiseStrength) : nil,
             upscale: canEnhance ? upscale : .off,
             sharpen: canEnhance ? Float(sharpen) : 0,
-            lut: canEnhance ? lut.map { AppliedLUT(lut: $0, intensity: Float(lutIntensity)) } : nil,
+            lut: canEnhance && lutEnabled ? lut.map { AppliedLUT(lut: $0, intensity: Float(lutIntensity)) } : nil,
+            look: canEnhance && lookEnabled ? look.map { AppliedLUT(lut: $0, intensity: Float(lookIntensity)) } : nil,
             grade: canEnhance && !grade.isIdentity ? grade : nil
         )
     }
@@ -125,11 +135,12 @@ final class Clip: Identifiable {
     var isAtDefaults: Bool {
         !deinterlace && fieldOrderChoice == nil && !showCaptions
             && !denoise && denoiseStrength == 0.5 && upscale == .off && sharpen == 0
-            && lutID == defaultLUTID && lutIntensity == 1 && grade.isIdentity
+            && lutID == defaultLUTID && lutIntensity == 1 && lutEnabled
+            && lookID == nil && lookIntensity == 1 && lookEnabled && grade.isIdentity
     }
 
     /// Puts everything set in the inspector back as it was when the clip was imported:
-    /// timing, captions, effects, LUT, and grade. In and out marks are kept.
+    /// timing, captions, effects, LUT, look, and grade. In and out marks are kept.
     func resetAll() {
         deinterlace = false
         fieldOrderChoice = nil
@@ -137,6 +148,10 @@ final class Clip: Identifiable {
         resetEffects()
         lutID = defaultLUTID
         lutIntensity = 1
+        lutEnabled = true
+        lookID = nil
+        lookIntensity = 1
+        lookEnabled = true
         grade = ColorGrade()
     }
 
@@ -159,7 +174,7 @@ final class Clip: Identifiable {
         var parts: [String] = []
         if settings.fieldOrder != nil { parts.append(deinterlacedRateLabel) }
         if settings.denoiseStrength != nil || settings.upscale != .off || settings.sharpen > 0 { parts.append("Enhanced") }
-        if settings.lut != nil || settings.grade != nil { parts.append("Graded") }
+        if settings.colorLook != nil { parts.append("Graded") }
         return parts.joined(separator: " ")
     }
 
@@ -192,6 +207,10 @@ final class Clip: Identifiable {
         r.sharpen = sharpen
         r.lutID = lutID
         r.lutIntensity = lutIntensity
+        r.lutEnabled = lutEnabled
+        r.lookID = lookID
+        r.lookIntensity = lookIntensity
+        r.lookEnabled = lookEnabled
         r.grade = grade
         return r
     }
@@ -210,6 +229,10 @@ final class Clip: Identifiable {
         if sharpen != r.sharpen { sharpen = r.sharpen }
         if lutID != r.lutID { lutID = r.lutID }
         if lutIntensity != r.lutIntensity { lutIntensity = r.lutIntensity }
+        if lutEnabled != r.lutEnabled { lutEnabled = r.lutEnabled }
+        if lookID != r.lookID { lookID = r.lookID }
+        if lookIntensity != r.lookIntensity { lookIntensity = r.lookIntensity }
+        if lookEnabled != r.lookEnabled { lookEnabled = r.lookEnabled }
         if grade != r.grade { grade = r.grade }
     }
 

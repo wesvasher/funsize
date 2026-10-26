@@ -106,7 +106,7 @@ struct ClipDetailView: View {
                 store.selection = [.clip(clip.id)]
             }
                 .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
-                .inspectorColumnWidth(min: 220, ideal: 260, max: 400)
+                .inspectorColumnWidth(300)
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {

@@ -134,12 +134,13 @@ nonisolated struct ColorGrade: Codable, Hashable, Sendable {
     }
 }
 
-/// Everything the color stage applies: the LUT (with its intensity), then the grade.
+/// Everything the color stage applies: the LUT, then the look (each with its intensity), then the grade.
 nonisolated struct ColorLook: Hashable, Sendable {
     var lut: AppliedLUT?
+    var look: AppliedLUT?
     var grade = ColorGrade()
 
-    var isEmpty: Bool { lut == nil && grade.isIdentity }
+    var isEmpty: Bool { lut == nil && look == nil && grade.isIdentity }
 }
 
 /// The color the preview shows, changeable while a video plays: the frame renderer reads it
@@ -180,7 +181,7 @@ nonisolated enum ColorStage {
     /// (video code values, or Apple Log), which is what LUTs are made for.
     static func apply(_ image: CIImage, look: ColorLook, gradeLUT: ColorLUT?, space: CGColorSpace) throws -> CIImage {
         var image = image
-        if let applied = look.lut {
+        for applied in [look.lut, look.look].compactMap(\.self) {
             var graded = try cube(applied.lut, on: image, space: space)
             if applied.intensity < 0.999 {
                 let mix = CIFilter(name: "CIMix")!

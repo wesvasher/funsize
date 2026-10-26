@@ -261,4 +261,40 @@ struct ColorProxyTests {
         for _ in 0..<400 where controller.colorProxy != nil { try await Task.sleep(for: .milliseconds(10)) }
         #expect(controller.colorProxy == nil)
     }
+
+    /// Choosing a LUT from the menu (no slider) shows it right away on the quick preview,
+    /// even though the full preview has to be rebuilt to add color.
+    @Test func choosingALUTShowsItRightAway() async throws {
+        let dir = try TestVideo.tempDirectory()
+        let url = try await TestVideo.make(in: dir, name: "red", seconds: 1, size: CGSize(width: 1920, height: 1080)) { _, pixels in
+            CVPixelBufferLockBaseAddress(pixels, [])
+            let base = CVPixelBufferGetBaseAddress(pixels)!.assumingMemoryBound(to: UInt8.self)
+            for i in stride(from: 0, to: CVPixelBufferGetDataSize(pixels), by: 4) {
+                base[i] = 40; base[i + 1] = 40; base[i + 2] = 220; base[i + 3] = 255
+            }
+            CVPixelBufferUnlockBaseAddress(pixels, [])
+        }
+        let clip = Clip(url: url)
+        await MediaLoader.load(clip)
+        let controller = ClipPlayerController()
+        controller.load(clip)
+        controller.currentTime = 0.5
+
+        clip.lutID = ColorLUT.builtIns.first { $0.name == "Black & White" }!.id
+        controller.updateColor()
+        for _ in 0..<100 where controller.colorProxy == nil { try await Task.sleep(for: .milliseconds(10)) }
+        let frame = try #require(controller.colorProxy, "a quick preview within a second")
+        var pixel = [UInt8](repeating: 0, count: 4)
+        let context = CGContext(data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                                space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.draw(frame.cropping(to: CGRect(x: frame.width / 2, y: frame.height / 2, width: 1, height: 1))!,
+                     in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        #expect(abs(Int(pixel[0]) - Int(pixel[2])) < 12, "black and white: \(pixel)")
+
+        // The full preview catches up (the view runs the rebuild), then the quick one goes away.
+        await controller.applyEffects()
+        for _ in 0..<400 where controller.colorProxy != nil { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(controller.colorProxy == nil)
+    }
 }

@@ -122,6 +122,15 @@ struct LUTPipelineTests {
         #expect(half.x - half.z > 0.15, "half strength keeps some red: \(half)")
         #expect(half.x - half.z < 0.6)
     }
+
+    @Test func lookAppliesAfterTheLUT() async throws {
+        let bw = ColorLUT.builtIns.first { $0.name == "Black & White" }!
+        let warm = ColorLUT.builtIns.first { $0.name == "Warm" }!
+        // Black and white, then warm: gray with a warm tint (red above blue).
+        let color = try await exportedColor(EnhanceSettings(lut: AppliedLUT(lut: bw, intensity: 1),
+                                                            look: AppliedLUT(lut: warm, intensity: 1)))
+        #expect(color.x - color.z > 0.03 && color.x - color.z < 0.3, "warm gray: \(color)")
+    }
 }
 
 struct ColorProjectTests {
@@ -136,5 +145,53 @@ struct ColorProjectTests {
         let record = try #require(try JSONDecoder().decode(ProjectFile.self, from: data).clips.first)
         #expect(record.lutID == clip.lutID && record.lutIntensity == 0.4)
         #expect(clip.exportNameSuffix.contains("Graded"))
+    }
+
+    @Test func lookAndSwitchesAreSavedInProjects() throws {
+        let store = ProjectStore(exporter: ExportManager.test())
+        let clip = Clip(url: URL(filePath: "/tmp/x.mov"))
+        clip.lutID = ColorLUT.builtIns[0].id
+        clip.lutEnabled = false
+        clip.lookID = ColorLUT.builtIns[3].id
+        clip.lookIntensity = 0.6
+        store.clips = [clip]
+        let data = try JSONEncoder().encode(store.projectFile)
+        let record = try #require(try JSONDecoder().decode(ProjectFile.self, from: data).clips.first)
+        #expect(record.lutID == clip.lutID && !record.lutEnabled)
+        #expect(record.lookID == clip.lookID && record.lookIntensity == 0.6 && record.lookEnabled)
+        let copy = Clip(url: URL(filePath: "/tmp/x.mov"), id: clip.id)
+        copy.apply(record)
+        #expect(copy.record == clip.record)
+    }
+
+    @Test func oldProjectsMoveABuiltInLookToTheLookMenu() throws {
+        let warm = ColorLUT.builtIns.first { $0.name == "Warm" }!
+        let old = #"{"id":"\#(UUID().uuidString)","path":"/tmp/x.mov","lutID":"\#(warm.id.uuidString)","lutIntensity":0.7}"#
+        let record = try JSONDecoder().decode(ProjectFile.ClipRecord.self, from: Data(old.utf8))
+        #expect(record.lutID == nil && record.lutIntensity == 1)
+        #expect(record.lookID == warm.id && record.lookIntensity == 0.7 && record.lookEnabled)
+
+        // A conversion LUT stays where it was.
+        let log = #"{"id":"\#(UUID().uuidString)","path":"/tmp/x.mov","lutID":"\#(ColorLUT.builtIns[0].id.uuidString)"}"#
+        let kept = try JSONDecoder().decode(ProjectFile.ClipRecord.self, from: Data(log.utf8))
+        #expect(kept.lutID == ColorLUT.builtIns[0].id && kept.lookID == nil)
+    }
+
+    @Test func switchesTurnTheLUTAndLookOffWithoutForgettingThem() {
+        let clip = Clip(url: URL(filePath: "/tmp/x.mov"))
+        clip.hasVideo = true
+        clip.displaySize = CGSize(width: 1920, height: 1080)
+        clip.lutID = ColorLUT.builtIns[0].id
+        clip.lookID = ColorLUT.builtIns[3].id
+        #expect(clip.enhanceSettings.lut != nil && clip.enhanceSettings.look?.lut.id == clip.lookID)
+
+        clip.lookEnabled = false
+        #expect(clip.enhanceSettings.look == nil && clip.enhanceSettings.lut != nil)
+        clip.lutEnabled = false
+        #expect(clip.enhanceSettings.colorLook == nil && !clip.enhanceSettings.isActive)
+        #expect(clip.lookID != nil && !clip.isAtDefaults)
+
+        clip.resetAll()
+        #expect(clip.lookID == nil && clip.lutEnabled && clip.lookEnabled && clip.isAtDefaults)
     }
 }
