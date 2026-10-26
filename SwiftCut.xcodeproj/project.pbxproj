@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0003D993E88E82D9B828C7B4 /* TimelineLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10D13FE39F0DBF9DBF2AA112 /* TimelineLayoutTests.swift */; };
 		00C0BEE425104130F8EE1A49 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 2DC75E701A5580F8738AA087 /* AppIcon.icon */; };
 		0587BFB60E2ADE4A93D5B30D /* ZoomableVideoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF27BF3435EAB2EE4A62962D /* ZoomableVideoView.swift */; };
 		1282668160F05F62E7FF2335 /* Deinterlacer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74F1BE0F1C7B97A24C6786B1 /* Deinterlacer.swift */; };
@@ -71,6 +72,7 @@
 		009AA65FF3330AD2F71DCE66 /* Bob.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = Bob.h; sourceTree = "<group>"; };
 		00F73CF61F1E3A8B4940A4EF /* FrameClock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameClock.swift; sourceTree = "<group>"; };
 		0A89C74F0EA246302F10F942 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		10D13FE39F0DBF9DBF2AA112 /* TimelineLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimelineLayoutTests.swift; sourceTree = "<group>"; };
 		1AF55AE9F9B242FA2BCDBFA9 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
 		25E508091518B2278CC00981 /* SuperResolutionModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuperResolutionModel.swift; sourceTree = "<group>"; };
 		2DC75E701A5580F8738AA087 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = wrapper.icon; path = AppIcon.icon; sourceTree = "<group>"; };
@@ -210,6 +212,7 @@
 				F6BA4AA90E73EA53FB016421 /* ExportPresetTests.swift */,
 				7D8AB2074771634D90A2759D /* FrameCopyTests.swift */,
 				8550F421DB4DC1A72E2480DC /* SwiftCutTests.swift */,
+				10D13FE39F0DBF9DBF2AA112 /* TimelineLayoutTests.swift */,
 				5979215272B35AB8E937F94F /* ViewerZoomTests.swift */,
 			);
 			path = SwiftCutTests;
@@ -386,6 +389,7 @@
 				5ED7CCAC40354C5CAAD0EFE2 /* ExportPresetTests.swift in Sources */,
 				AAD22BF20E4E707579CAF6D5 /* FrameCopyTests.swift in Sources */,
 				52406DC514B8FDF95954FDAE /* SwiftCutTests.swift in Sources */,
+				0003D993E88E82D9B828C7B4 /* TimelineLayoutTests.swift in Sources */,
 				56476295B3693767B5CBA542 /* ViewerZoomTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

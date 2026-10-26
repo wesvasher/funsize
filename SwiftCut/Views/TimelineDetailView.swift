@@ -4,6 +4,8 @@ import SwiftUI
 struct TimelineDetailView: View {
     @Environment(ProjectStore.self) private var store
     @State private var isShowingInspector = true
+    /// Shared by the preview and the timeline strip, which draws the playhead.
+    @State private var playback = TimelinePlayback()
 
     /// The inspector, hidden while both sidebars are hidden (⌘.). Showing it by hand
     /// brings the left sidebar back too.
@@ -19,9 +21,9 @@ struct TimelineDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            TimelinePreview()
+            TimelinePreview(player: playback.player)
             Divider()
-            TimelineEditorView()
+            TimelineEditorView(playback: playback)
                 .frame(height: 180)
         }
         // No minimum size beside the inspector, or the split view re-layouts in a loop (see ClipDetailView).
@@ -45,7 +47,7 @@ struct TimelineDetailView: View {
 /// Plays the combined timeline, rebuilding it whenever the timeline changes.
 private struct TimelinePreview: View {
     @Environment(ProjectStore.self) private var store
-    @State private var player = AVPlayer()
+    let player: AVPlayer
     @State private var buildError: String?
     @State private var sourceID = UUID()
 
@@ -118,5 +120,35 @@ private struct TimelinePreview: View {
         } catch {
             buildError = error.localizedDescription
         }
+    }
+}
+
+/// The timeline's player and where it is, for the playhead.
+@Observable
+final class TimelinePlayback {
+    let player = AVPlayer()
+    /// Seconds from the start of the timeline.
+    private(set) var time: Double = 0
+    @ObservationIgnored private var observer: Any?
+
+    init() {
+        // Also called when the time jumps (seeking), not just while playing.
+        observer = player.addPeriodicTimeObserver(forInterval: CMTime(value: 1, timescale: 30), queue: .main) { [weak self] time in
+            MainActor.assumeIsolated {
+                guard let self, time.isNumeric else { return }
+                self.time = time.seconds
+            }
+        }
+    }
+
+    /// Moves the playhead (pausing playback), for scrubbing.
+    func scrub(to seconds: Double) {
+        player.pause()
+        time = seconds
+        player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+    }
+
+    isolated deinit {
+        if let observer { player.removeTimeObserver(observer) }
     }
 }
