@@ -12,11 +12,22 @@ final class ProjectStore {
     /// Parts of source videos. Shown under their source in the sidebar.
     var subclips: [Subclip] = []
     var timeline: [TimelineItem] = []
-    /// The timeline's frame size, frame rate, and fit (timeline inspector's Format section).
+    /// The timeline's frame size, frame rate, and fit (timeline inspector's Timeline Settings section).
     var timelineSettings = TimelineSettings()
     var selection: Set<SidebarItem> = []
     var selectedTimelineItemID: UUID?
     var isImporting = false
+    /// How loud each timeline item's part of its file is, by `loudnessKey`.
+    private(set) var loudness: [String: LoudnessState] = [:]
+    /// The timeline player's volume changes and live level.
+    let timelineAudio = TimelineAudio()
+
+    enum LoudnessState: Equatable {
+        case measuring
+        /// `nil` when the part has no sound.
+        case measured(Loudness.Measurement?)
+        case failed
+    }
 
     init(exporter: ExportManager) {
         self.exporter = exporter
@@ -106,8 +117,10 @@ final class ProjectStore {
     var timelineSignature: [String] {
         timeline.map { item in
             let range = trimRange(of: item)
-            return "\(item.id)|\(range.lowerBound)|\(range.upperBound)"
-        } + ["\(timelineSettings)"]
+            // The clip's effects and color too, so the timeline shows changes made in the clip viewer.
+            let effects = clip(for: item.clipID)?.enhanceSettings.hashValue ?? 0
+            return "\(item.id)|\(range.lowerBound)|\(range.upperBound)|\(effects)"
+        } + ["\(timelineSettings.pictureOnly)"]
     }
 
     // MARK: Importing
@@ -260,7 +273,8 @@ final class ProjectStore {
         var file = ProjectFile(
             clips: clips.map(\.record),
             subclips: subclips.map(\.record),
-            timeline: timeline.map { .init(id: $0.id, clipID: $0.clipID, subclipID: $0.subclipID) }
+            timeline: timeline.map { .init(id: $0.id, clipID: $0.clipID, subclipID: $0.subclipID,
+                                           audio: $0.audio.isDefault ? nil : $0.audio) }
         )
         file.timelineSettings = timelineSettings
         return file
@@ -287,7 +301,9 @@ final class ProjectStore {
         }
         if updatedSubclips.map(\.id) != subclips.map(\.id) { subclips = updatedSubclips }
 
-        let items = file.timeline.map { TimelineItem(id: $0.id, clipID: $0.clipID, subclipID: $0.subclipID) }
+        let items = file.timeline.map {
+            TimelineItem(id: $0.id, clipID: $0.clipID, subclipID: $0.subclipID, audio: $0.audio ?? ItemAudio())
+        }
         if items != timeline { timeline = items }
         if file.timelineSettings != timelineSettings { timelineSettings = file.timelineSettings }
 
@@ -359,7 +375,7 @@ final class ProjectStore {
         guard let index = timeline.firstIndex(where: { $0.id == id }) else { return }
         let original = timeline[index]
         // Shares the subclip until one of them is trimmed.
-        let copy = TimelineItem(clipID: original.clipID, subclipID: original.subclipID)
+        let copy = TimelineItem(clipID: original.clipID, subclipID: original.subclipID, audio: original.audio)
         timeline.insert(copy, at: index + 1)
         selectedTimelineItemID = copy.id
     }
@@ -431,18 +447,139 @@ final class ProjectStore {
         timeline.compactMap { item in
             guard let clip = clip(for: item.clipID), clip.isLoaded else { return nil }
             let range = trimRange(of: item)
-            return .init(url: clip.url, start: range.lowerBound, end: range.upperBound)
+            return .init(url: clip.url, start: range.lowerBound, end: range.upperBound, settings: clip.enhanceSettings)
         }
     }
 
     /// The timeline's frame size in pixels, from its settings (Automatic uses the first clip with video).
     var timelineFrameSize: CGSize {
         let first = timeline.lazy.compactMap { self.clip(for: $0.clipID) }.first { $0.hasVideo && $0.displaySize != .zero }
-        return timelineSettings.renderSize(firstClip: first?.displaySize)
+        return timelineSettings.renderSize(firstClip: first?.outputSize)
+    }
+
+    /// Frames per second the timeline plays and exports at: its setting, or the fastest clip's
+    /// (deinterlaced clips count double).
+    var timelineFrameRate: Double {
+        if let duration = timelineSettings.frameRate.frameDuration { return 1 / duration.seconds }
+        let fastest = timeline.compactMap { clip(for: $0.clipID) }.filter(\.hasVideo).map(\.outputFrameRate).max() ?? 0
+        return fastest > 0 ? Double(fastest) : 30
+    }
+
+    /// What a timeline export starts from, for estimating its size.
+    var timelineExportSource: ExportEstimate.Source {
+        let clips = timeline.compactMap { clip(for: $0.clipID) }
+        let withSound = clips.filter(\.hasAudio)
+        let audio: (sampleRate: Double, channels: Int)? = withSound.isEmpty ? nil : (
+            withSound.compactMap(\.audioSampleRate).max() ?? 48_000,
+            withSound.compactMap(\.audioChannels).max() ?? 2
+        )
+        return ExportEstimate.Source(frameSize: timelineFrameSize, framesPerSecond: timelineFrameRate,
+                                     duration: timelineDuration, audio: audio)
     }
 
     func buildTimeline() async throws -> CompositionBuilder.Result {
-        try await CompositionBuilder.build(timelineSegments, settings: timelineSettings)
+        try await CompositionBuilder.build(timelineSegments, settings: timelineSettings,
+                                           audio: TimelineAudio(spans: timelineAudioSpans))
+    }
+
+    // MARK: Loudness
+
+    /// How a timeline item's volume works out.
+    struct AudioPlan: Equatable {
+        var state: LoudnessState?
+        /// Decibels it's turned up or down by.
+        var gainDB: Double
+        /// Kept from going louder, so the loudest moments don't distort.
+        var isLimited: Bool
+        /// Whether it's following the timeline's target.
+        var isMatching: Bool
+
+        var measurement: Loudness.Measurement? {
+            if case .measured(let measurement) = state { measurement } else { nil }
+        }
+        /// Its loudness after the change, in LUFS.
+        var result: Double? { measurement?.integrated.map { $0 + gainDB } }
+    }
+
+    /// Identifies the sound a timeline item plays: its file and the part of it.
+    func loudnessKey(for item: TimelineItem) -> String? {
+        guard let clip = clip(for: item.clipID), clip.isLoaded else { return nil }
+        let range = trimRange(of: item)
+        return "\(clip.url.path)|\(range.lowerBound)|\(range.upperBound)"
+    }
+
+    func audioPlan(for item: TimelineItem) -> AudioPlan {
+        let state = loudnessKey(for: item).flatMap { loudness[$0] }
+        var plan = AudioPlan(state: state, gainDB: item.audio.adjustDB, isLimited: false,
+                             isMatching: timelineSettings.matchLoudness && item.audio.matchesTarget)
+        guard let measurement = plan.measurement else { return plan }
+        if plan.isMatching, let integrated = measurement.integrated {
+            plan.gainDB += timelineSettings.loudnessTarget - integrated
+        }
+        // Turning up stops 1 dB short of full scale, where the sound would distort.
+        let headroom = -1 - measurement.peak
+        if plan.gainDB > 0, plan.gainDB > headroom {
+            plan.gainDB = max(0, headroom)
+            plan.isLimited = true
+        }
+        plan.gainDB = min(30, max(-60, plan.gainDB))
+        return plan
+    }
+
+    /// Where each item plays on the timeline and its volume change, in the order the
+    /// combined video is built.
+    var timelineAudioSpans: [TimelineAudio.Span] {
+        var start = 0.0
+        return timeline.compactMap { item in
+            guard let clip = clip(for: item.clipID), clip.isLoaded else { return nil }
+            let duration = self.duration(of: item)
+            guard duration > 0 else { return nil }
+            defer { start += duration }
+            return TimelineAudio.Span(start: start, end: start + duration, gainDB: audioPlan(for: item).gainDB)
+        }
+    }
+
+    /// Seconds into the timeline where an item starts, as `timelineAudioSpans` counts.
+    func timelineStart(of item: TimelineItem) -> Double {
+        var start = 0.0
+        for other in timeline {
+            if other.id == item.id { break }
+            if clip(for: other.clipID)?.isLoaded == true { start += duration(of: other) }
+        }
+        return start
+    }
+
+    /// The parts of files the timeline plays. Measuring starts again when they change.
+    var loudnessKeys: [String] {
+        timeline.compactMap(loudnessKey(for:))
+    }
+
+    /// Measures every timeline item's loudness that isn't known yet, one at a time.
+    func measureTimelineLoudness() async {
+        for item in timeline {
+            guard !Task.isCancelled else { return }
+            guard let key = loudnessKey(for: item), loudness[key] == nil,
+                  let clip = clip(for: item.clipID) else { continue }
+            guard clip.hasAudio else {
+                loudness[key] = .measured(nil)
+                continue
+            }
+            loudness[key] = .measuring
+            let url = clip.url, range = trimRange(of: item)
+            do {
+                let measurement = try await Task.detached(priority: .utility) {
+                    try await Loudness.measure(url: url, range: range)
+                }.value
+                loudness[key] = .measured(measurement)
+            } catch {
+                loudness[key] = Task.isCancelled ? nil : .failed
+            }
+        }
+    }
+
+    func setAudio(_ audio: ItemAudio, for itemID: UUID) {
+        guard let index = timeline.firstIndex(where: { $0.id == itemID }) else { return }
+        timeline[index].audio = audio
     }
 
     var canExport: Bool {
@@ -528,7 +665,7 @@ final class ProjectStore {
             do {
                 let result = try await buildTimeline()
                 exporter.export(asset: result.composition, videoComposition: result.videoComposition,
-                                name: name, preset: preset, folder: folder)
+                                audioMix: result.audioMix, name: name, preset: preset, folder: folder)
             } catch {
                 exporter.reportFailure(error.localizedDescription, name: "Timeline", preset: preset)
             }

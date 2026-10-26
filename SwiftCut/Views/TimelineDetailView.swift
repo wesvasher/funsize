@@ -27,6 +27,10 @@ struct TimelineDetailView: View {
                 .frame(height: 180)
         }
         .spaceBarPlaysAndPauses { playback.togglePlayPause() }
+        .onAppear { playback.audio = store.timelineAudio }
+        // Measure each clip's loudness, and keep the player's volume changes up to date.
+        .task(id: store.loudnessKeys) { await store.measureTimelineLoudness() }
+        .onChange(of: store.timelineAudioSpans, initial: true) { _, spans in store.timelineAudio.spans = spans }
         // No minimum size beside the inspector, or the split view re-layouts in a loop (see ClipDetailView).
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
         .clipped()
@@ -170,16 +174,27 @@ private struct TimelinePreview: View {
             return
         }
         do {
-            let result = try await CompositionBuilder.build(segments, settings: store.timelineSettings)
+            store.timelineAudio.spans = store.timelineAudioSpans
+            store.timelineAudio.envelope = nil
+            let result = try await CompositionBuilder.build(segments, settings: store.timelineSettings,
+                                                            audio: store.timelineAudio)
             guard !Task.isCancelled else { return }
             let resumeAt = player.currentTime()
             let item = AVPlayerItem(asset: result.composition)
             item.videoComposition = result.videoComposition
+            item.audioMix = result.audioMix
             player.replaceCurrentItem(with: item)
             if resumeAt.seconds < result.duration {
                 await player.seek(to: resumeAt)
             }
             buildError = nil
+            // Measure the sound ahead of time, so the meters follow scrubbing.
+            nonisolated(unsafe) let composition = result.composition
+            let envelope = try? await Task.detached(priority: .utility) {
+                try await TimelineAudio.envelope(of: composition)
+            }.value
+            guard !Task.isCancelled else { return }
+            store.timelineAudio.envelope = envelope
         } catch {
             buildError = error.localizedDescription
         }
@@ -190,6 +205,8 @@ private struct TimelinePreview: View {
 @Observable
 final class TimelinePlayback {
     let player = AVPlayer()
+    /// The timeline's sound, told about scrubbing so the meters can follow it.
+    @ObservationIgnored var audio: TimelineAudio?
     /// Seconds from the start of the timeline.
     private(set) var time: Double = 0
     private(set) var isPlaying = false
@@ -227,6 +244,7 @@ final class TimelinePlayback {
     func scrub(to seconds: Double) {
         player.pause()
         time = seconds
+        audio?.noteScrub(at: seconds)
         player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
     }
 

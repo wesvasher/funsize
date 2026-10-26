@@ -1,9 +1,10 @@
 import SwiftUI
 
 /// Right-hand panel for the timeline: its format (frame size, frame rate, fit), the selected
-/// clip and its trim, and buttons to save and load timeline settings.
+/// clip (with Edit to open it in the clip viewer), and buttons to save and load timeline settings.
 struct TimelineInspectorView: View {
     @Environment(ProjectStore.self) private var store
+    @Environment(ExportManager.self) private var exporter
     @State private var presets = TimelinePresetStore.shared
     @State private var isNamingPreset = false
     @State private var presetName = ""
@@ -11,13 +12,13 @@ struct TimelineInspectorView: View {
     var body: some View {
         InspectorPanel {
             format
+            export
             if let item = store.selectedTimelineItem, let clip = store.clip(for: item.clipID) {
                 selectedClip(item, clip)
-                trim(item, clip)
             } else {
                 InspectorSection("Selected Clip") {
                     GridRow {
-                        Text("Select a clip in the timeline to see and trim it.")
+                        Text("Select a clip in the timeline to see it here.")
                             .foregroundStyle(.secondary)
                             .gridCellColumns(2)
                     }
@@ -28,12 +29,12 @@ struct TimelineInspectorView: View {
         }
     }
 
-    // MARK: Format
+    // MARK: Timeline settings
 
     /// Frame size, frame rate, and how clips fit the frame.
     private var format: some View {
         @Bindable var store = store
-        return InspectorSection("Format") {
+        return InspectorSection("Timeline Settings") {
             GridRow {
                 InspectorLabel("Aspect Ratio")
                 picker($store.timelineSettings.aspect, TimelineSettings.Aspect.allCases, \.title)
@@ -51,6 +52,27 @@ struct TimelineInspectorView: View {
                 picker($store.timelineSettings.fit, TimelineSettings.Fit.allCases, \.title)
             }
             .help("How clips of a different shape fill the frame")
+            GridRow {
+                InspectorLabel("Loudness")
+                HStack(spacing: 6) {
+                    Toggle("Match Loudness", isOn: $store.timelineSettings.matchLoudness)
+                        .toggleStyle(.switch)
+                        .controlSize(.mini)
+                        .labelsHidden()
+                    Text("Even out the clips")
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .help("Turns each clip up or down so they all sound equally loud. Change a clip under Selected Clip.")
+            GridRow {
+                InspectorLabel("Target")
+                picker($store.timelineSettings.loudnessTarget, TimelineSettings.loudnessTargets.map(\.lufs)) { lufs in
+                    TimelineSettings.loudnessTargets.first { $0.lufs == lufs }?.title ?? "\(lufs.loudnessText) LUFS"
+                }
+                .disabled(!store.timelineSettings.matchLoudness)
+            }
+            .help("How loud the clips are made. Online video is usually −14 LUFS; TV is −23 or −24.")
             InspectorRow("Frame Size", frameSizeText)
             InspectorRow("Rate", frameRateText)
             GridRow {
@@ -73,6 +95,17 @@ struct TimelineInspectorView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    private func picker<Value: Hashable>(_ selection: Binding<Value>, _ choices: [Value],
+                                         title: @escaping (Value) -> String) -> some View {
+        Picker("", selection: selection) {
+            ForEach(choices, id: \.self) { choice in
+                Text(title(choice)).tag(choice)
+            }
+        }
+        .labelsHidden()
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
     private var frameSizeText: String {
         let size = store.timelineFrameSize
         return "\(Int(size.width)) × \(Int(size.height))"
@@ -89,6 +122,101 @@ struct TimelineInspectorView: View {
         return "\(text) fps (from the clips)"
     }
 
+    // MARK: Export
+
+    /// The preset the Export section uses: the chosen one, or the first if it was deleted.
+    private var exportPreset: ExportPreset? {
+        exporter.presets.first { $0.id == store.timelineSettings.exportPresetID } ?? exporter.presets.first
+    }
+
+    /// Export preset, where the file goes, a size estimate, and the Export button.
+    private var export: some View {
+        @Bindable var exporter = exporter
+        let preset = exportPreset
+        return InspectorSection("Export") {
+            GridRow {
+                InspectorLabel("Preset")
+                Picker("", selection: Binding(
+                    get: { preset?.id },
+                    set: { store.timelineSettings.exportPresetID = $0 }
+                )) {
+                    ForEach(exporter.presets) { choice in
+                        Text(choice.name).tag(Optional(choice.id))
+                    }
+                }
+                .labelsHidden()
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if let preset {
+                GridRow {
+                    Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
+                    Text(preset.summary)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            GridRow {
+                InspectorLabel("Save To")
+                Picker("", selection: $exporter.location) {
+                    Text("Project Folder").tag(ExportLocation.projectFolder)
+                    Text("Ask Each Time").tag(ExportLocation.ask)
+                    Text("Chosen Folder").tag(ExportLocation.folder)
+                }
+                .labelsHidden()
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .help("Where exports are saved. This is the same setting as in Settings › Export.")
+            if exporter.location == .folder {
+                GridRow {
+                    Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
+                    HStack(spacing: 6) {
+                        Text(exporter.customFolderPath.map { ($0 as NSString).lastPathComponent } ?? "No folder chosen")
+                            .foregroundStyle(exporter.customFolderIsMissing ? .orange : .secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .help(exporter.customFolderPath?.abbreviatingWithTilde ?? "")
+                        Button("Choose…") { exporter.chooseCustomFolder() }
+                    }
+                }
+            }
+            if let preset, !store.timeline.isEmpty {
+                let estimate = ExportEstimate(preset: preset, source: store.timelineExportSource)
+                if estimate.frameSize != .zero {
+                    InspectorRow("Output", "\(Int(estimate.frameSize.width)) × \(Int(estimate.frameSize.height)) at \(Self.fpsText(estimate.framesPerSecond))")
+                }
+                InspectorRow("Length", store.timelineDuration.preciseTimecode)
+                GridRow {
+                    InspectorLabel("File Size")
+                    Text((estimate.isRough ? "About " : "") + ByteCountFormatter.string(fromByteCount: Int64(estimate.totalBytes), countStyle: .file))
+                        .fontWeight(.semibold)
+                        .help(estimate.isRough
+                              ? "An estimate: with a Quality setting, the size depends on the picture. Busy scenes come out bigger than still ones."
+                              : "Estimated from the preset's data rate")
+                }
+            }
+            GridRow {
+                Button {
+                    if let preset { store.exportTimeline(as: preset) }
+                } label: {
+                    Label("Export Timeline", systemImage: "square.and.arrow.up")
+                        .font(.body.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(store.timeline.isEmpty || preset == nil)
+                .help("Export the timeline with the preset above")
+                .padding(.top, 4)
+                .gridCellColumns(2)
+            }
+        }
+    }
+
+    private static func fpsText(_ fps: Double) -> String {
+        let rounded = (fps * 1000).rounded() / 1000
+        return rounded == rounded.rounded() ? "\(Int(rounded)) fps" : String(format: "%.3g fps", rounded)
+    }
+
     // MARK: Selected clip
 
     private func selectedClip(_ item: TimelineItem, _ clip: Clip) -> some View {
@@ -103,47 +231,131 @@ struct TimelineInspectorView: View {
             InspectorRow("Clip", store.name(of: item))
             InspectorRow("Kind", item.subclipID == nil ? "Whole source video" : "Subclip of \(clip.name)")
             InspectorRow("Source", clip.duration.preciseTimecode)
+            audioRows(item)
             GridRow {
-                Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
                 HStack(spacing: 6) {
+                    Spacer(minLength: 0)
+                    Button("Edit") { edit(item) }
+                        .help(item.subclipID == nil ? "Open the source video in the clip viewer"
+                                                    : "Open the subclip in the clip viewer")
                     Button("Duplicate") { store.duplicateTimelineItem(item.id) }
                     Button("Remove", role: .destructive) { store.removeTimelineItem(item.id) }
+                }
+                .gridCellColumns(2)
+            }
+        }
+    }
+
+    // MARK: Sound
+
+    /// The clip's loudness meter and volume controls.
+    @ViewBuilder
+    private func audioRows(_ item: TimelineItem) -> some View {
+        let plan = store.audioPlan(for: item)
+        let settings = store.timelineSettings
+        GridRow {
+            Divider().gridCellColumns(2)
+        }
+        GridRow {
+            InspectorLabel("Loudness")
+            loudnessText(plan)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        if plan.state != .measured(nil) {
+            let target = plan.isMatching ? settings.loudnessTarget : nil
+            let start = store.timelineStart(of: item)
+            GridRow {
+                InspectorLabel("Clip")
+                LoudnessBar(value: plan.result, original: plan.gainDB == 0 ? nil : plan.measurement?.integrated,
+                            target: target)
+            }
+            .help("The clip's loudness after its volume change. The faint mark is where it started; the line is the target.")
+            GridRow {
+                InspectorLabel("Live")
+                LiveLoudnessBar(audio: store.timelineAudio, span: start..<(start + store.duration(of: item)), target: target)
+            }
+            .help("How loud the clip is right now, while it plays")
+            GridRow {
+                InspectorLabel("")
+                LoudnessScale()
+            }
+            if settings.matchLoudness {
+                GridRow {
+                    InspectorLabel("Match")
+                    Toggle("Match Target", isOn: Binding(
+                        get: { item.audio.matchesTarget },
+                        set: { var audio = item.audio; audio.matchesTarget = $0; store.setAudio(audio, for: item.id) }
+                    ))
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .labelsHidden()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .help("Turn this clip up or down to the timeline's loudness target")
+                }
+            }
+            GridRow {
+                InspectorLabel(plan.isMatching ? "Adjust" : "Volume")
+                HStack(spacing: 6) {
+                    Slider(value: Binding(
+                        get: { item.audio.adjustDB },
+                        set: { var audio = item.audio; audio.adjustDB = ($0 * 2).rounded() / 2; store.setAudio(audio, for: item.id) }
+                    ), in: -20...20)
+                    Text(item.audio.adjustDB.decibelChangeText)
+                        .monospacedDigit()
+                        .frame(width: 46, alignment: .trailing)
+                    Button("Reset", systemImage: "arrow.counterclockwise") {
+                        var audio = item.audio
+                        audio.adjustDB = 0
+                        store.setAudio(audio, for: item.id)
+                    }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.borderless)
+                    .disabled(item.audio.adjustDB == 0)
+                    .help("Back to 0 dB")
+                }
+            }
+            .help(plan.isMatching ? "Louder or quieter than the target, for this clip" : "Turn this clip up or down")
+            if plan.isLimited {
+                GridRow {
+                    Text("Turned up as far as it goes without distorting.")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                        .gridCellColumns(2)
                 }
             }
         }
     }
 
-    private func trim(_ item: TimelineItem, _ clip: Clip) -> some View {
-        let range = store.trimRange(of: item)
-        let limit = 0...max(ProjectStore.minimumClipLength, clip.duration)
-        return InspectorSection("Trim") {
-            InspectorRow("Start", range.lowerBound.preciseTimecode)
-            GridRow {
-                Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
-                Slider(value: Binding(get: { range.lowerBound }, set: { store.setTrimStart($0, for: item.id) }), in: limit)
+    @ViewBuilder
+    private func loudnessText(_ plan: ProjectStore.AudioPlan) -> some View {
+        switch plan.state {
+        case nil, .measuring?:
+            HStack(spacing: 4) {
+                ProgressView().controlSize(.mini)
+                Text("Measuring…").foregroundStyle(.secondary)
             }
-            InspectorRow("End", range.upperBound.preciseTimecode)
-            GridRow {
-                Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
-                Slider(value: Binding(get: { range.upperBound }, set: { store.setTrimEnd($0, for: item.id) }), in: limit)
-            }
-            InspectorRow("Length", (range.upperBound - range.lowerBound).preciseTimecode)
-            if item.subclipID != nil {
-                GridRow {
-                    Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
-                    Button("Use Whole Source Video") { store.resetTrim(for: item.id) }
+        case .failed?:
+            Text("Couldn't measure").foregroundStyle(.secondary)
+        case .measured(nil)?:
+            Text("No sound").foregroundStyle(.secondary)
+        case .measured(let measurement?)?:
+            if let integrated = measurement.integrated {
+                if plan.gainDB == 0 {
+                    Text("\(integrated.loudnessText) LUFS")
+                } else {
+                    Text("\(integrated.loudnessText) → \(plan.result!.loudnessText) LUFS (\(plan.gainDB.decibelChangeText))")
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                 }
-            }
-            GridRow {
-                Text(item.subclipID == nil
-                     ? "Trimming makes this a subclip. The source video isn't changed."
-                     : "Trimming changes this subclip. The source video isn't changed.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .gridCellColumns(2)
+            } else {
+                Text("Silent").foregroundStyle(.secondary)
             }
         }
-        .monospacedDigit()
+    }
+
+    /// Opens the clip in the clip viewer: its subclip, or the whole source video.
+    private func edit(_ item: TimelineItem) {
+        store.selection = [item.subclipID.map { .subclip($0) } ?? .clip(item.clipID)]
     }
 
     // MARK: Saving and loading settings
@@ -185,7 +397,7 @@ struct TimelineInspectorView: View {
             }
             // Menus don't stretch like buttons, so both keep their own width, centered in half the bar.
             .frame(maxWidth: .infinity)
-            .help("Save the Format settings to use on other timelines")
+            .help("Save these timeline settings to use on other timelines")
         }
         .alert("Save Timeline Settings", isPresented: $isNamingPreset) {
             TextField("Name", text: $presetName)
@@ -193,7 +405,7 @@ struct TimelineInspectorView: View {
                 .disabled(presetName.trimmingCharacters(in: .whitespaces).isEmpty)
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Saves the aspect ratio, resolution, frame rate, and fit so you can load them into other projects. Settings with the same name are replaced.")
+            Text("Saves the aspect ratio, resolution, frame rate, fit, loudness, and export preset so you can load them into other projects. Settings with the same name are replaced.")
         }
     }
 }

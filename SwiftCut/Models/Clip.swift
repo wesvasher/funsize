@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreImage
 import Observation
 
 /// A source video: a video (or audio) file the user imported, used as is.
@@ -236,7 +237,7 @@ final class Clip: Identifiable {
         if grade != r.grade { grade = r.grade }
     }
 
-    var poster: CGImage? { thumbnails.first?.image }
+    var poster: CGImage? { colored(thumbnails.indices.first) }
 
     var hasMarks: Bool { inPoint != nil || outPoint != nil }
 
@@ -246,9 +247,28 @@ final class Clip: Identifiable {
         return start...max(start, outPoint ?? duration)
     }
 
-    /// Closest thumbnail to a given time, used to draw filmstrips.
+    /// Closest thumbnail to a given time, used to draw filmstrips. Shows the clip's LUT, look, and grade.
     func thumbnail(near time: Double) -> CGImage? {
-        thumbnails.min { abs($0.time - time) < abs($1.time - time) }?.image
+        colored(thumbnails.indices.min { abs(thumbnails[$0].time - time) < abs(thumbnails[$1].time - time) })
+    }
+
+    /// Thumbnails with the current color applied, kept until the color changes.
+    @ObservationIgnored private var coloredThumbnails: (look: ColorLook, gradeLUT: ColorLUT?, images: [Int: CGImage])?
+
+    /// The thumbnail at `index` with the clip's LUT, look, and grade (the original when there are none).
+    private func colored(_ index: Int?) -> CGImage? {
+        guard let index else { return nil }
+        let original = thumbnails[index].image
+        // Reading the settings here lets thumbnails redraw when the color changes.
+        guard let look = enhanceSettings.colorLook else { return original }
+        if coloredThumbnails?.look != look {
+            // A smaller cube than the video's: plenty for a thumbnail, and quick to make while a slider moves.
+            coloredThumbnails = (look, look.grade.isIdentity ? nil : look.grade.makeLUT(size: 17), [:])
+        }
+        if let cached = coloredThumbnails?.images[index] { return cached }
+        let image = ThumbnailColor.apply(look, gradeLUT: coloredThumbnails?.gradeLUT, to: original) ?? original
+        coloredThumbnails?.images[index] = image
+        return image
     }
 
     var summary: String {
@@ -317,11 +337,14 @@ struct TimelineItem: Identifiable, Hashable {
     let clipID: UUID
     /// The subclip it plays, or `nil` for the whole source video.
     var subclipID: UUID?
+    /// Its volume: matching the timeline's loudness target, and turned up or down.
+    var audio = ItemAudio()
 
-    init(id: UUID = UUID(), clipID: UUID, subclipID: UUID? = nil) {
+    init(id: UUID = UUID(), clipID: UUID, subclipID: UUID? = nil, audio: ItemAudio = ItemAudio()) {
         self.id = id
         self.clipID = clipID
         self.subclipID = subclipID
+        self.audio = audio
     }
 
     /// URL used to drag this item around inside the timeline.
@@ -331,6 +354,16 @@ struct TimelineItem: Identifiable, Hashable {
         guard url.scheme == "swiftcut-item", let host = url.host() else { return nil }
         return UUID(uuidString: host)
     }
+}
+
+/// A timeline item's volume settings.
+nonisolated struct ItemAudio: Codable, Hashable, Sendable {
+    /// Turned up or down to the timeline's loudness target, when Match Loudness is on.
+    var matchesTarget = true
+    /// Extra decibels on top: louder or quieter than the target (or than the clip, without matching).
+    var adjustDB = 0.0
+
+    var isDefault: Bool { self == ItemAudio() }
 }
 
 enum SidebarItem: Hashable {
@@ -357,5 +390,18 @@ extension Double {
         let m = Int(self) / 60
         let s = self - Double(m * 60)
         return String(format: "%d:%04.1f", m, s)
+    }
+}
+
+/// Applies a clip's color to its thumbnails, the same way the quick color preview does.
+nonisolated enum ThumbnailColor {
+    /// Frames are treated as Rec. 709 video, as the player shows them.
+    private static let space = CGColorSpace(name: CGColorSpace.itur_709)!
+    private static let context = CIContext(options: [.cacheIntermediates: false])
+
+    static func apply(_ look: ColorLook, gradeLUT: ColorLUT?, to image: CGImage) -> CGImage? {
+        let source = CIImage(cgImage: image)
+        guard let colored = try? ColorStage.apply(source, look: look, gradeLUT: gradeLUT, space: space) else { return nil }
+        return context.createCGImage(colored, from: source.extent, format: .RGBA8, colorSpace: space)
     }
 }

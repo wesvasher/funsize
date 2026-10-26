@@ -22,6 +22,7 @@ nonisolated final class Transcoder: @unchecked Sendable {
 
     private let asset: AVAsset
     private let videoComposition: AVVideoComposition?
+    private let audioMix: AVAudioMix?
     private let timeRange: CMTimeRange?
     private let preset: ExportPreset
     private let outputURL: URL
@@ -31,9 +32,11 @@ nonisolated final class Transcoder: @unchecked Sendable {
     private let lock = NSLock()
     private var isCancelled = false
 
-    init(asset: AVAsset, videoComposition: AVVideoComposition?, timeRange: CMTimeRange?, preset: ExportPreset, outputURL: URL) {
+    init(asset: AVAsset, videoComposition: AVVideoComposition?, audioMix: AVAudioMix? = nil, timeRange: CMTimeRange?,
+         preset: ExportPreset, outputURL: URL) {
         self.asset = asset
         self.videoComposition = videoComposition
+        self.audioMix = audioMix
         self.timeRange = timeRange
         self.preset = preset.normalized
         self.outputURL = outputURL
@@ -253,6 +256,7 @@ nonisolated final class Transcoder: @unchecked Sendable {
             AVLinearPCMIsNonInterleaved: false,
         ]
         let output = AVAssetReaderAudioMixOutput(audioTracks: tracks, audioSettings: readSettings)
+        output.audioMix = audioMix
         output.alwaysCopiesSampleData = false
         guard reader.canAdd(output) else { throw TranscodeError.failed("Couldn't read the sound.") }
         reader.add(output)

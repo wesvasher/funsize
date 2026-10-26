@@ -101,16 +101,67 @@ struct TimelineEditorView: View {
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
             Spacer()
-            Image(systemName: "minus.magnifyingglass")
-                .foregroundStyle(.secondary)
-            Slider(value: $pointsPerSecond, in: 5...200)
-                .frame(width: 120)
-                .help("Zoom the timeline")
-            Image(systemName: "plus.magnifyingglass")
-                .foregroundStyle(.secondary)
+            OutputLevelMeter(audio: store.timelineAudio)
+                .padding(.trailing, 8)
+            HStack(spacing: 4) {
+                Button { zoom(by: 1 / zoomStep) } label: {
+                    Image(systemName: "minus.magnifyingglass")
+                }
+                .help("Zoom out")
+                .disabled(pointsPerSecond <= zoomRange.lowerBound)
+                Slider(value: $pointsPerSecond, in: zoomRange)
+                    .frame(width: 120)
+                    .help("Zoom the timeline")
+                Button { zoom(by: zoomStep) } label: {
+                    Image(systemName: "plus.magnifyingglass")
+                }
+                .help("Zoom in")
+                .disabled(pointsPerSecond >= zoomRange.upperBound)
+                Button { pointsPerSecond = fitPointsPerSecond } label: {
+                    Image(systemName: "arrow.right.and.line.vertical.and.arrow.left")
+                }
+                .help("Zoom out to fit the whole timeline")
+                .disabled(store.timeline.isEmpty)
+                .padding(.leading, 4)
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.secondary)
         }
         .padding(.horizontal, padding)
         .padding(.vertical, 8)
+    }
+
+    // MARK: Zoom
+
+    /// How much each click of the zoom buttons changes the zoom.
+    private let zoomStep = 1.5
+
+    /// The slider's range. It reaches down far enough to fit a long timeline.
+    private var zoomRange: ClosedRange<Double> {
+        min(5, fitPointsPerSecond)...200
+    }
+
+    private func zoom(by factor: Double) {
+        let range = zoomRange
+        pointsPerSecond = min(range.upperBound, max(range.lowerBound, pointsPerSecond * factor))
+    }
+
+    /// The zoom that shows every clip in the visible width.
+    private var fitPointsPerSecond: Double {
+        let durations = store.timeline.map(store.duration(of:))
+        guard !durations.isEmpty, visibleWidth > 0 else { return 5 }
+        let available = Double(visibleWidth - 2 * padding - spacing * CGFloat(durations.count - 1))
+        func totalWidth(_ pps: Double) -> Double {
+            durations.reduce(0) { $0 + max(Double(minimumClipWidth), $1 * pps) }
+        }
+        // Clips have a minimum width, so search for the largest zoom that still fits.
+        var low = 0.01, high = 200.0
+        guard totalWidth(high) > available else { return high }
+        for _ in 0..<40 {
+            let mid = (low + high) / 2
+            if totalWidth(mid) <= available { low = mid } else { high = mid }
+        }
+        return low
     }
 
     @ViewBuilder

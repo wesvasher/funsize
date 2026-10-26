@@ -297,6 +297,7 @@ final class ExportManager {
     func export(
         asset: AVAsset,
         videoComposition: AVVideoComposition? = nil,
+        audioMix: AVAudioMix? = nil,
         timeRange: CMTimeRange? = nil,
         name: String,
         preset: ExportPreset,
@@ -307,7 +308,7 @@ final class ExportManager {
         jobs.insert(job, at: 0)
         isShowingActivity = true
 
-        let transcoder = Transcoder(asset: asset, videoComposition: videoComposition, timeRange: timeRange,
+        let transcoder = Transcoder(asset: asset, videoComposition: videoComposition, audioMix: audioMix, timeRange: timeRange,
                                     preset: preset, outputURL: outputURL)
         job.task = Task {
             do {

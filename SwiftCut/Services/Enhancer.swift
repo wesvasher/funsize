@@ -210,7 +210,7 @@ nonisolated enum Enhancer {
     }
 
     /// 4× needs Apple's downloaded model. Say so up front instead of failing on every frame.
-    private static func checkModel(for asset: AVAsset, settings: EnhanceSettings) async throws {
+    static func checkModel(for asset: AVAsset, settings: EnhanceSettings) async throws {
         guard settings.upscale == .best, let video = try await asset.loadTracks(withMediaType: .video).first else { return }
         let size = evenSize(try await VideoGeometry.load(video).displaySize)
         guard let config = bestScalerConfiguration(width: Int(size.width), height: Int(size.height)) else {

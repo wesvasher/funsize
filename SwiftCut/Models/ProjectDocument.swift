@@ -37,7 +37,7 @@ nonisolated struct ProjectFile: Codable, Equatable, Sendable {
                                uniquingKeysWith: { first, _ in first })
         var counts: [UUID: Int] = [:]
         timeline = try (c.decodeIfPresent([SavedTimelineItem].self, forKey: .timeline) ?? []).map { saved in
-            var record = TimelineRecord(id: saved.id, clipID: saved.clipID, subclipID: saved.subclipID)
+            var record = TimelineRecord(id: saved.id, clipID: saved.clipID, subclipID: saved.subclipID, audio: saved.audio)
             let start = saved.trimStart ?? 0
             if record.subclipID == nil, start > 0 || saved.trimEnd != nil {
                 counts[saved.clipID, default: 0] += 1
@@ -56,6 +56,7 @@ nonisolated struct ProjectFile: Codable, Equatable, Sendable {
         var id: UUID
         var clipID: UUID
         var subclipID: UUID?
+        var audio: ItemAudio?
         var trimStart: Double?
         var trimEnd: Double?
     }
@@ -135,6 +136,8 @@ nonisolated struct ProjectFile: Codable, Equatable, Sendable {
         var clipID: UUID
         /// `nil` plays the whole source video.
         var subclipID: UUID?
+        /// Volume settings; `nil` when untouched.
+        var audio: ItemAudio?
     }
 
     /// A new project holding these videos. Call while the app has access to them.

@@ -115,13 +115,32 @@ nonisolated struct TimelineSettings: Codable, Hashable, Sendable {
     var resolution = Resolution.automatic
     var frameRate = FrameRate.automatic
     var fit = Fit.fit
+    /// The export preset the Export section uses, or `nil` for the first one.
+    var exportPresetID: UUID?
+    /// Turns each clip up or down so they all reach `loudnessTarget`.
+    var matchLoudness = false
+    /// In LUFS.
+    var loudnessTarget = -16.0
+
+    /// Common loudness targets, loudest first.
+    static let loudnessTargets: [(lufs: Double, title: String)] = [
+        (-14, "−14 LUFS (Online)"),
+        (-16, "−16 LUFS (Podcasts)"),
+        (-19, "−19 LUFS (Quiet)"),
+        (-23, "−23 LUFS (TV, Europe)"),
+        (-24, "−24 LUFS (TV, US)"),
+    ]
 
     init(aspect: Aspect = .automatic, resolution: Resolution = .automatic,
-         frameRate: FrameRate = .automatic, fit: Fit = .fit) {
+         frameRate: FrameRate = .automatic, fit: Fit = .fit, exportPresetID: UUID? = nil,
+         matchLoudness: Bool = false, loudnessTarget: Double = -16) {
         self.aspect = aspect
         self.resolution = resolution
         self.frameRate = frameRate
         self.fit = fit
+        self.exportPresetID = exportPresetID
+        self.matchLoudness = matchLoudness
+        self.loudnessTarget = loudnessTarget
     }
 
     // Missing or unknown values (older projects, newer choices) fall back to Automatic.
@@ -131,9 +150,20 @@ nonisolated struct TimelineSettings: Codable, Hashable, Sendable {
         resolution = (try? c.decodeIfPresent(Resolution.self, forKey: .resolution)) ?? .automatic
         frameRate = (try? c.decodeIfPresent(FrameRate.self, forKey: .frameRate)) ?? .automatic
         fit = (try? c.decodeIfPresent(Fit.self, forKey: .fit)) ?? .fit
+        exportPresetID = try? c.decodeIfPresent(UUID.self, forKey: .exportPresetID)
+        matchLoudness = (try? c.decodeIfPresent(Bool.self, forKey: .matchLoudness)) ?? false
+        loudnessTarget = (try? c.decodeIfPresent(Double.self, forKey: .loudnessTarget)) ?? -16
     }
 
     var isDefault: Bool { self == TimelineSettings() }
+
+    /// Without the sound settings, which change the volume without rebuilding the video.
+    var pictureOnly: TimelineSettings {
+        var copy = self
+        copy.matchLoudness = false
+        copy.loudnessTarget = -16
+        return copy
+    }
 
     /// The frame size in pixels. `firstClip` is the first clip's picture size (used by
     /// Automatic); without one, Automatic means 1920 × 1080.
