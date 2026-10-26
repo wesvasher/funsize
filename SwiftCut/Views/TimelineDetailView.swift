@@ -26,6 +26,7 @@ struct TimelineDetailView: View {
             TimelineEditorView(playback: playback)
                 .frame(height: 180)
         }
+        .spaceBarPlaysAndPauses { playback.togglePlayPause() }
         // No minimum size beside the inspector, or the split view re-layouts in a loop (see ClipDetailView).
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
         .clipped()
@@ -139,6 +140,19 @@ final class TimelinePlayback {
                 self.time = time.seconds
             }
         }
+    }
+
+    func togglePlayPause() {
+        guard let item = player.currentItem else { return }
+        if player.rate != 0 {
+            player.pause()
+            return
+        }
+        // Start over if it's at the end.
+        if item.duration.isNumeric, player.currentTime().seconds >= item.duration.seconds - 0.05 {
+            player.seek(to: .zero)
+        }
+        player.play()
     }
 
     /// Moves the playhead (pausing playback), for scrubbing.

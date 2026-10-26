@@ -12,6 +12,8 @@ struct TimelineEditorView: View {
     private let spacing: CGFloat = 4
     private let padding: CGFloat = 12
     private let minimumClipWidth: CGFloat = 48
+    /// Height of the strip above the clips that moves the playhead.
+    private let scrubHeight: CGFloat = 18
 
     var body: some View {
         VStack(spacing: 0) {
@@ -44,10 +46,17 @@ struct TimelineEditorView: View {
                         }
                     }
                 }
-                .padding(padding)
+                .padding(.horizontal, padding)
+                .padding(.bottom, padding)
+                .padding(.top, scrubHeight)
                 .frame(minWidth: visibleWidth, maxHeight: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
                 .onTapGesture { store.selectedTimelineItemID = nil }
+                .overlay(alignment: .top) {
+                    if !store.timeline.isEmpty {
+                        scrubArea
+                    }
+                }
                 .overlay(alignment: .topLeading) {
                     if !store.timeline.isEmpty {
                         playhead
@@ -125,37 +134,39 @@ struct TimelineEditorView: View {
                        widths: store.timeline.map(width(of:)), spacing: spacing, start: padding)
     }
 
-    /// A tall line across the clips at the current time, with a handle on top to drag.
+    /// The strip above the clips: click or drag in it to move the playhead.
+    /// (Clicking a clip only selects it.)
+    private var scrubArea: some View {
+        let layout = layout
+        return Rectangle()
+            .fill(.clear)
+            .frame(height: scrubHeight)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0, coordinateSpace: .named("timelineStrip"))
+                    .onChanged { value in playback.scrub(to: layout.time(at: value.location.x)) }
+            )
+            .help("Click or drag here to move the playhead")
+            .accessibilityElement()
+            .accessibilityLabel("Playhead")
+            .accessibilityValue(playback.time.timecode)
+            .accessibilityAdjustableAction { direction in
+                let step = 1.0 / 30
+                playback.scrub(to: min(max(0, playback.time + (direction == .increment ? step : -step)), store.timelineDuration))
+            }
+    }
+
+    /// A tall white line across the clips at the current time, like the clip viewer's scrubber.
     private var playhead: some View {
         GeometryReader { proxy in
-            let layout = layout
-            let x = layout.x(at: playback.time)
-            ZStack(alignment: .top) {
-                RoundedRectangle(cornerRadius: 1)
-                    .fill(.white)
-                    .shadow(color: .black.opacity(0.5), radius: 1.5)
-                    .frame(width: 2, height: proxy.size.height - padding / 2)
-                    .offset(y: padding / 2)
-                    .allowsHitTesting(false)
-                // The handle: drag it to scrub.
-                PlayheadHandle()
-                    .fill(.white)
-                    .shadow(color: .black.opacity(0.5), radius: 1.5)
-                    .frame(width: 12, height: 10)
-                    .contentShape(Rectangle().inset(by: -6))
-                    .pointerStyle(.columnResize)
-                    .gesture(
-                        DragGesture(minimumDistance: 0, coordinateSpace: .named("timelineStrip"))
-                            .onChanged { value in playback.scrub(to: layout.time(at: value.location.x)) }
-                    )
-                    .help("Drag to move the playhead")
-            }
-            .frame(width: 12)
-            .offset(x: x - 6)
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(.white)
+                .shadow(radius: 2)
+                .frame(width: 3, height: proxy.size.height - padding / 2)
+                .offset(x: layout.x(at: playback.time) - 1.5, y: padding / 4)
         }
-        .accessibilityElement()
-        .accessibilityLabel("Playhead")
-        .accessibilityValue(playback.time.timecode)
+        .allowsHitTesting(false)
     }
 
     /// Shows the item's subclip (or its whole source video) in the clip viewer.
@@ -230,20 +241,6 @@ private struct TimelineClipView: View {
         }
         .contentShape(Rectangle())
         .help((isSubclip ? "\(name) (subclip of \(clip.name))" : "\(clip.name) (whole source video)") + ". Double-click to open it in the viewer.")
-    }
-}
-
-/// A downward-pointing tab at the top of the playhead.
-nonisolated private struct PlayheadHandle: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY * 0.55))
-        path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY * 0.55))
-        path.closeSubpath()
-        return path
     }
 }
 

@@ -76,6 +76,7 @@ struct ClipDetailView: View {
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
         .clipped()
         .focusedSceneValue(\.clipPlayer, controller)
+        .spaceBarPlaysAndPauses { controller.togglePlayPause() }
         .onChange(of: [ObjectIdentifier(clip), subclip.map(ObjectIdentifier.init)], initial: true) {
             controller.load(clip, subclip: subclip)
             pan = .zero

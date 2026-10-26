@@ -18,6 +18,7 @@
 		298C20A82A9D93D4C82E130F /* ExportPreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF3C4EFD3E8BFBBA73632423 /* ExportPreset.swift */; };
 		2ABBC235286FB6CBCD945B42 /* Bob.c in Sources */ = {isa = PBXBuildFile; fileRef = 70F43BF22B7AD1C5C8A1563D /* Bob.c */; };
 		2C4DD0AA8CB8CE4367772C0C /* ProjectStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA40600C8B1D09EBA8019AD5 /* ProjectStore.swift */; };
+		325B9222CEAE651D233D9E46 /* SpaceBarTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B8C6722F9612990561D8403 /* SpaceBarTests.swift */; };
 		3626C44BCA364419E221F6A3 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3EC3CFD54129F7418FC4E13 /* ContentView.swift */; };
 		4193381319565BD1BAAB51B1 /* FullScreenPlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A28063A3F34061522459B636 /* FullScreenPlayer.swift */; };
 		479525505657F6020189E5BA /* ColorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0B1CD8460F24BAF4319CB16 /* ColorTests.swift */; };
@@ -35,6 +36,7 @@
 		8141C3CCB46DBE1F6A6AAA1A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0A89C74F0EA246302F10F942 /* Assets.xcassets */; };
 		840EF5E2122E2D3490407A4E /* ColorSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72C97ACC847E4DF3B39889F0 /* ColorSettingsView.swift */; };
 		860FA4D5BECA775D025431C6 /* ClipInspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7851F2E03E080FEACC2B5416 /* ClipInspectorView.swift */; };
+		92559378592C017AEEC38BA0 /* SpaceBarPlayPause.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E6048C278CD140A1A244362 /* SpaceBarPlayPause.swift */; };
 		93B115B3D307B5A4C8D8F513 /* ExportPresetsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6D3E9B971A2BDC954079A54 /* ExportPresetsSettingsView.swift */; };
 		93F66EEC1906EE2EAD29C5ED /* VideoGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A88C9A98E1E08F55B21FC50E /* VideoGeometry.swift */; };
 		99E6EC2532F57A7B50444CF8 /* FrameClipboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE60CD788DC0A86F8372E9D8 /* FrameClipboard.swift */; };
@@ -84,6 +86,8 @@
 		5962417DF9D0ABB4CE4672A0 /* CompositionBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositionBuilder.swift; sourceTree = "<group>"; };
 		5979215272B35AB8E937F94F /* ViewerZoomTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewerZoomTests.swift; sourceTree = "<group>"; };
 		5A1D6FA451A065A0C083F2B9 /* Clip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Clip.swift; sourceTree = "<group>"; };
+		5E6048C278CD140A1A244362 /* SpaceBarPlayPause.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpaceBarPlayPause.swift; sourceTree = "<group>"; };
+		6B8C6722F9612990561D8403 /* SpaceBarTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpaceBarTests.swift; sourceTree = "<group>"; };
 		70F43BF22B7AD1C5C8A1563D /* Bob.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = Bob.c; sourceTree = "<group>"; };
 		72C97ACC847E4DF3B39889F0 /* ColorSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorSettingsView.swift; sourceTree = "<group>"; };
 		74F1BE0F1C7B97A24C6786B1 /* Deinterlacer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Deinterlacer.swift; sourceTree = "<group>"; };
@@ -143,6 +147,7 @@
 				F11F07F1DB6E07958D961C94 /* ProjectWindow.swift */,
 				7F10D6BDDE728E696D9AF2E1 /* SettingsView.swift */,
 				1AF55AE9F9B242FA2BCDBFA9 /* SidebarView.swift */,
+				5E6048C278CD140A1A244362 /* SpaceBarPlayPause.swift */,
 				E1271873556AD23279CDE7C1 /* TimelineDetailView.swift */,
 				33C92205D480F96689F504F1 /* TimelineEditorView.swift */,
 				8165EE9AAAE6C156CFA2C4AF /* TimelineInspectorView.swift */,
@@ -211,6 +216,7 @@
 				F0B1CD8460F24BAF4319CB16 /* ColorTests.swift */,
 				F6BA4AA90E73EA53FB016421 /* ExportPresetTests.swift */,
 				7D8AB2074771634D90A2759D /* FrameCopyTests.swift */,
+				6B8C6722F9612990561D8403 /* SpaceBarTests.swift */,
 				8550F421DB4DC1A72E2480DC /* SwiftCutTests.swift */,
 				10D13FE39F0DBF9DBF2AA112 /* TimelineLayoutTests.swift */,
 				5979215272B35AB8E937F94F /* ViewerZoomTests.swift */,
@@ -366,6 +372,7 @@
 				F385E1AF22D7DF816AC40295 /* ProjectWindow.swift in Sources */,
 				9FB0DB049DC2E607A70411CC /* SettingsView.swift in Sources */,
 				175DEDF0AC9332B4F99788AD /* SidebarView.swift in Sources */,
+				92559378592C017AEEC38BA0 /* SpaceBarPlayPause.swift in Sources */,
 				70D380513EF8F39B5395C993 /* SuperResolutionModel.swift in Sources */,
 				AACC4E9C4C159F390C4C2C5E /* SwiftCutApp.swift in Sources */,
 				296ACC72A61D8D48D1DF8E38 /* TimelineDetailView.swift in Sources */,
@@ -388,6 +395,7 @@
 				479525505657F6020189E5BA /* ColorTests.swift in Sources */,
 				5ED7CCAC40354C5CAAD0EFE2 /* ExportPresetTests.swift in Sources */,
 				AAD22BF20E4E707579CAF6D5 /* FrameCopyTests.swift in Sources */,
+				325B9222CEAE651D233D9E46 /* SpaceBarTests.swift in Sources */,
 				52406DC514B8FDF95954FDAE /* SwiftCutTests.swift in Sources */,
 				0003D993E88E82D9B828C7B4 /* TimelineLayoutTests.swift in Sources */,
 				56476295B3693767B5CBA542 /* ViewerZoomTests.swift in Sources */,
