@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 /// The bar above a video viewer (clip viewer and timeline): the picture size, then Copy Frame,
-/// Export Images, and zoom on the right. `leading` holds controls only one viewer has.
+/// Export Images, zoom, and the master volume on the right. `leading` holds controls only one viewer has.
 struct VideoToolbar<Leading: View>: View {
     /// The picture's size in pixels, or `nil` if not known yet.
     let pictureSize: CGSize?
@@ -33,6 +33,8 @@ struct VideoToolbar<Leading: View>: View {
                 .disabled(!canCopy || isExporting)
                 .help("Save the full frame, and the part in view, as PNG images in the project's folder")
             ViewerZoomControl(zoom: $zoom)
+            Divider().frame(height: 14)
+            MonitorVolumeControl()
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 5)

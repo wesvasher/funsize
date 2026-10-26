@@ -214,6 +214,7 @@ final class TimelinePlayback {
     @ObservationIgnored private var statusObservation: NSKeyValueObservation?
 
     init() {
+        MonitorVolume.shared.attach(player)
         // Also called when the time jumps (seeking), not just while playing.
         observer = player.addPeriodicTimeObserver(forInterval: CMTime(value: 1, timescale: 30), queue: .main) { [weak self] time in
             MainActor.assumeIsolated {

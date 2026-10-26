@@ -6,6 +6,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case appearance
     case color
     case exportPresets
+    case help
 
     /// Remembers the last page; other windows set it to open Settings on a page.
     static let storageKey = "settingsPage"
@@ -18,6 +19,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .appearance: "Appearance"
         case .color: "Color"
         case .exportPresets: "Export Presets"
+        case .help: "Help"
         }
     }
 
@@ -27,6 +29,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .appearance: "circle.lefthalf.filled"
         case .color: "paintpalette"
         case .exportPresets: "square.and.arrow.up.on.square"
+        case .help: "questionmark"
         }
     }
 
@@ -36,6 +39,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         case .appearance: .indigo
         case .color: .orange
         case .exportPresets: .blue
+        case .help: .green
         }
     }
 }
@@ -68,11 +72,12 @@ struct SettingsView: View {
                 case .appearance: AppearanceSettingsView()
                 case .color: ColorSettingsView()
                 case .exportPresets: ExportPresetsSettingsView()
+                case .help: HelpSettingsView()
                 }
             }
             .navigationTitle(page.title)
         }
-        .frame(width: 820, height: 620)
+        .frame(width: 1000, height: 700)
     }
 }
 

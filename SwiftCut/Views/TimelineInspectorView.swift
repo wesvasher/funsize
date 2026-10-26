@@ -195,18 +195,21 @@ struct TimelineInspectorView: View {
                 }
             }
             GridRow {
-                Button {
-                    if let preset { store.exportTimeline(as: preset) }
-                } label: {
-                    Label("Export Timeline", systemImage: "square.and.arrow.up")
-                        .font(.body.weight(.semibold))
-                        .frame(maxWidth: .infinity)
+                HStack(spacing: 6) {
+                    Spacer(minLength: 0)
+                    let running = store.runningTimelineExports
+                    if !running.isEmpty {
+                        Button(running.count == 1 ? "Cancel Export" : "Cancel Exports") { store.cancelTimelineExports() }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.red)
+                            .help("Stop exporting the timeline. The unfinished file is deleted.")
+                    }
+                    Button("Export Timeline") {
+                        if let preset { store.exportTimeline(as: preset) }
+                    }
+                    .disabled(store.timeline.isEmpty || preset == nil)
+                    .help("Export the timeline with the preset above")
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(store.timeline.isEmpty || preset == nil)
-                .help("Export the timeline with the preset above")
-                .padding(.top, 4)
                 .gridCellColumns(2)
             }
         }

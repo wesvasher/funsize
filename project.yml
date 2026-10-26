@@ -15,7 +15,13 @@ targets:
   SwiftCut:
     type: application
     platform: macOS
-    sources: [SwiftCut]
+    sources:
+      - path: SwiftCut
+        excludes: ["Resources/Help/**"]
+      # Help articles, kept as a folder in the app (Help/*.md).
+      - path: SwiftCut/Resources/Help
+        type: folder
+        buildPhase: resources
     info:
       path: SwiftCut/Info.plist
       properties:

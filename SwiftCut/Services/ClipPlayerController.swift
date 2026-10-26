@@ -28,6 +28,7 @@ final class ClipPlayerController {
     @ObservationIgnored private var endObserver: NSObjectProtocol?
 
     init() {
+        MonitorVolume.shared.attach(player)
         // Captions follow the inspector switch, not the system's automatic choice.
         player.appliesMediaSelectionCriteriaAutomatically = false
         timeObserver = player.addPeriodicTimeObserver(

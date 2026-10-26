@@ -656,6 +656,15 @@ final class ProjectStore {
         }
     }
 
+    /// This project's timeline exports, for the inspector's Cancel button.
+    private(set) var timelineExports: [ExportJob] = []
+
+    var runningTimelineExports: [ExportJob] { timelineExports.filter(\.isRunning) }
+
+    func cancelTimelineExports() {
+        for job in runningTimelineExports { job.cancel() }
+    }
+
     func exportTimeline(as preset: ExportPreset) {
         Task {
             guard let folder = await exportFolder() else { return }
@@ -664,8 +673,10 @@ final class ProjectStore {
                 .replacingOccurrences(of: ":", with: ".")
             do {
                 let result = try await buildTimeline()
-                exporter.export(asset: result.composition, videoComposition: result.videoComposition,
-                                audioMix: result.audioMix, name: name, preset: preset, folder: folder)
+                let job = exporter.export(asset: result.composition, videoComposition: result.videoComposition,
+                                          audioMix: result.audioMix, name: name, preset: preset, folder: folder)
+                timelineExports.removeAll { !$0.isRunning }
+                timelineExports.append(job)
             } catch {
                 exporter.reportFailure(error.localizedDescription, name: "Timeline", preset: preset)
             }

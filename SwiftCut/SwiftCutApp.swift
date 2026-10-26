@@ -14,6 +14,7 @@ struct SwiftCutApp: App {
         .commands {
             PlaybackCommands()
             ProjectCommands()
+            HelpCommands()
         }
 
         Window("Welcome to SwiftCut", id: WelcomeWindow.id) {
@@ -57,6 +58,21 @@ struct ProjectCommands: Commands {
             Button("Import Videos…") { store?.isImporting = true }
                 .keyboardShortcut("i", modifiers: [.command, .shift])
                 .disabled(store == nil)
+        }
+    }
+}
+
+/// Help › SwiftCut Help opens the Help page in Settings.
+struct HelpCommands: Commands {
+    @Environment(\.openSettings) private var openSettings
+
+    var body: some Commands {
+        CommandGroup(replacing: .help) {
+            Button("SwiftCut Help") {
+                UserDefaults.standard.set(SettingsPage.help.rawValue, forKey: SettingsPage.storageKey)
+                openSettings()
+            }
+            .keyboardShortcut("?", modifiers: .command)
         }
     }
 }
