@@ -228,6 +228,14 @@ final class TimelinePlayback {
         }
     }
 
+    /// Where the player is right now. While playing, this is read every screen refresh so the
+    /// playhead glides instead of stepping at the time observer's rate.
+    var liveTime: Double {
+        guard isPlaying else { return time }
+        let now = player.currentTime()
+        return now.isNumeric ? now.seconds : time
+    }
+
     func togglePlayPause() {
         guard let item = player.currentItem else { return }
         if player.rate != 0 {

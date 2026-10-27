@@ -199,9 +199,12 @@ struct TimelineInspectorView: View {
                     Spacer(minLength: 0)
                     let running = store.runningTimelineExports
                     if !running.isEmpty {
-                        Button(running.count == 1 ? "Cancel Export" : "Cancel Exports") { store.cancelTimelineExports() }
-                            .buttonStyle(.borderedProminent)
-                            .tint(.red)
+                        Button(running.count == 1 ? "Cancel Export" : "Cancel Exports", role: .destructive) {
+                            store.cancelTimelineExports()
+                        }
+                        // A filled, deep red, like a Delete button in a warning.
+                        .buttonStyle(.borderedProminent)
+                        .tint(Color.red.mix(with: .black, by: 0.25))
                             .help("Stop exporting the timeline. The unfinished file is deleted.")
                     }
                     Button("Export Timeline") {

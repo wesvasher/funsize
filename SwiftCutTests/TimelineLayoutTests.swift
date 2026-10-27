@@ -28,3 +28,15 @@ struct TimelineLayoutTests {
         #expect(layout.time(at: 313) == 10)
     }
 }
+
+struct TimelineLayoutPlaybackTests {
+    @Test func continuousPositionCoversTheGaps() {
+        let layout = TimelineLayout(durations: [2, 2], widths: [100, 100], spacing: 4, start: 10)
+        // Starts and ends match the exact mapping.
+        #expect(layout.continuousX(at: 0) == 10)
+        #expect(layout.continuousX(at: 2) == layout.x(at: 2))
+        #expect(layout.continuousX(at: 4) == layout.x(at: 4))
+        // Just before the second clip, it's almost across the gap instead of at the first clip's edge.
+        #expect(abs(layout.continuousX(at: 1.999) - 114) < 0.2)
+    }
+}

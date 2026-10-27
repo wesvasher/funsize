@@ -265,6 +265,69 @@ struct HandleAndKeyTests {
         #expect(clip.outPoint == clip.duration)
     }
 
+    @Test func nudgesMoveByWholeFrames() async throws {
+        let (controller, clip) = try await loadedController()
+        clip.inPoint = 15.0 / 30
+        clip.outPoint = 45.0 / 30
+
+        controller.nudgeIn(by: 1)
+        #expect(abs(clip.inPoint! - 16.0 / 30) < 0.0001)
+        controller.nudgeIn(by: -10)
+        #expect(abs(clip.inPoint! - 6.0 / 30) < 0.0001)
+        controller.nudgeIn(by: -30)  // stops at the start
+        #expect(clip.inPoint == 0)
+
+        controller.nudgeOut(by: -1)
+        #expect(abs(clip.outPoint! - 44.0 / 30) < 0.0001)
+        controller.nudgeOut(by: 30)
+        #expect(abs(clip.outPoint! - 74.0 / 30) < 0.0001 || clip.outPoint == clip.duration)
+        controller.nudgeOut(by: -999)  // can't pass the in point
+        #expect(abs(clip.outPoint! - 1.0 / 30) < 0.0001)
+    }
+
+    /// Plays the marked range with each loop mode and watches where the playhead goes.
+    @Test func loopModesStayInTheMarkedRange() async throws {
+        let (controller, clip) = try await loadedController(seconds: 3)
+        clip.inPoint = 0.5
+        clip.outPoint = 1.0
+        func watch(seconds: Double) async -> (times: [Double], wentBackward: Bool) {
+            var times: [Double] = [], backward = false
+            let end = Date.now.addingTimeInterval(seconds)
+            while Date.now < end {
+                try? await Task.sleep(for: .milliseconds(20))
+                times.append(controller.player.currentTime().seconds)
+                backward = backward || controller.isPlayingBackward
+            }
+            return (times, backward)
+        }
+
+        controller.loopMode = .loop
+        controller.seek(to: 2)  // outside the range: play starts at the in point
+        controller.play()
+        let looped = await watch(seconds: 1.6)
+        #expect(controller.isPlaying)
+        #expect(looped.times.allSatisfy { $0 >= 0.5 - 0.001 && $0 <= 1.0 })
+        // It went around more than once: the time dropped back at least twice.
+        #expect(zip(looped.times, looped.times.dropFirst()).filter { $1 < $0 - 0.2 }.count >= 2)
+        #expect(!looped.wentBackward)
+
+        controller.pause()
+        controller.loopMode = .backAndForth
+        controller.play()
+        let bounced = await watch(seconds: 1.6)
+        #expect(controller.isPlaying)
+        #expect(bounced.times.allSatisfy { $0 >= 0.5 - 0.001 && $0 <= 1.0 })
+        #expect(bounced.wentBackward)
+
+        controller.pause()
+        controller.loopMode = .off
+        controller.seek(to: 2.5)
+        controller.play()
+        let stopped = await watch(seconds: 1)
+        #expect(!controller.isPlaying)
+        #expect(stopped.times.last.map { $0 > 2.9 } == true)
+    }
+
     @Test func keyboardShortcuts() async throws {
         let (controller, clip) = try await loadedController()
         func press(_ chars: String, keyCode: UInt16, flags: NSEvent.ModifierFlags = []) -> Bool {
@@ -434,6 +497,41 @@ struct WindowLayoutTests {
             window.displayIfNeeded()
         }
         #expect(store.selectedClips.first?.isLoaded == true)
+    }
+
+    /// A clip with sound, then a subclip of it: this locked up the app when the inspector sized
+    /// its sections from a width it measured itself.
+    @Test func subclipWithSoundSettlesWithoutLayoutLoop() async throws {
+        let dir = try TestVideo.tempDirectory()
+        let url = try await TestVideo.make(in: dir, name: "clip", seconds: 4, size: CGSize(width: 640, height: 360), audio: true)
+        let store = ProjectStore(exporter: ExportManager.test())
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1200, height: 760),
+                              styleMask: [.titled, .resizable, .closable], backing: .buffered, defer: false)
+        window.contentView = NSHostingView(rootView: ContentView().environment(store).environment(store.exporter))
+        window.orderFront(nil)
+        defer { window.orderOut(nil) }
+        func settle(_ cycles: Int) async throws {
+            for _ in 0..<cycles {
+                try await Task.sleep(for: .milliseconds(50))
+                window.contentView?.layoutSubtreeIfNeeded()
+                window.displayIfNeeded()
+            }
+        }
+
+        store.importAndSelect([url])
+        try await settle(30)
+        let clip = try #require(store.selectedClips.first)
+        #expect(clip.isLoaded)
+        clip.inPoint = 1
+        clip.outPoint = 2
+        let subclip = try #require(store.addSubclip(from: clip))
+        store.selection = [.subclip(subclip.id)]
+        try await settle(30)
+        store.selection = [.clip(clip.id)]
+        try await settle(10)
+        store.selection = [.subclip(subclip.id)]
+        try await settle(20)
+        #expect(store.selectedSubclips.first?.id == subclip.id)
     }
 
     @Test func timelineWindowSettlesWithoutLayoutLoop() async throws {

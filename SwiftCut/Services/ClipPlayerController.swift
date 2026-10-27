@@ -18,9 +18,30 @@ final class ClipPlayerController {
     var playbackSpeed: Float = 1 {
         didSet {
             player.defaultRate = playbackSpeed
-            if isPlaying { player.rate = playbackSpeed }
+            if isPlaying { player.rate = playingRate }
         }
     }
+
+    /// What playback does at the out point (or the end of the clip when nothing is marked).
+    enum LoopMode: String, CaseIterable, Identifiable {
+        /// Stops at the end of the clip.
+        case off
+        /// Jumps back to the in point and keeps playing.
+        case loop
+        /// Plays backward to the in point, then forward again.
+        case backAndForth
+
+        var id: Self { self }
+    }
+
+    var loopMode: LoopMode = .off {
+        didSet { applyLoopRange() }
+    }
+
+    /// Playing backward, on the way back in Back and Forth.
+    private(set) var isPlayingBackward = false
+
+    private var playingRate: Float { isPlayingBackward ? -playbackSpeed : playbackSpeed }
 
     static let playbackSpeeds: [Float] = [0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4]
 
@@ -149,7 +170,7 @@ final class ClipPlayerController {
         player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
             Task { @MainActor in await self?.releaseFreezeFrame(after: thisSwitch, item: target, time: time) }
         }
-        if wasPlaying { player.playImmediately(atRate: playbackSpeed) }
+        if wasPlaying { player.playImmediately(atRate: playingRate) }
     }
 
     /// Removes the still frame once the new version has a frame ready to show.
@@ -391,7 +412,59 @@ final class ClipPlayerController {
         endObserver = NotificationCenter.default.addObserver(
             forName: AVPlayerItem.didPlayToEndTimeNotification, object: item, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.isPlaying = false }
+            MainActor.assumeIsolated { self?.reachedEnd() }
+        }
+        applyLoopRange()
+    }
+
+    // MARK: Looping
+
+    /// While looping, playback stops at the out point going forward and at the in point going
+    /// backward, and `reachedEnd` decides what happens next.
+    private func applyLoopRange() {
+        guard let item = player.currentItem else { return }
+        guard loopMode != .off, clip != nil else {
+            item.forwardPlaybackEndTime = .invalid
+            item.reversePlaybackEndTime = .invalid
+            return
+        }
+        let range = markedRange
+        // A tenth of a frame before the out point, so the frame after it never shows.
+        let end = max(range.lowerBound, range.upperBound - clock.seconds(ofFrame: 1) / 10)
+        item.forwardPlaybackEndTime = CMTime(seconds: end, preferredTimescale: 90_000)
+        item.reversePlaybackEndTime = CMTime(seconds: range.lowerBound, preferredTimescale: 90_000)
+    }
+
+    /// Whether the player can play backward at the current speed.
+    private var canPlayBackward: Bool {
+        guard let item = player.currentItem else { return false }
+        if playbackSpeed > 1 { return item.canPlayFastReverse }
+        if playbackSpeed < 1 { return item.canPlaySlowReverse }
+        return item.canPlayReverse
+    }
+
+    /// Playback reached the out point, the in point (going backward), or the end of the clip.
+    private func reachedEnd() {
+        guard isPlaying else { return }
+        switch loopMode {
+        case .off:
+            isPlaying = false
+            isPlayingBackward = false
+        case .backAndForth where canPlayBackward:
+            isPlayingBackward.toggle()
+            player.rate = playingRate
+        case .loop, .backAndForth:
+            // Some files can't play backward; those loop instead.
+            isPlayingBackward = false
+            let start = markedRange.lowerBound
+            currentTime = start
+            player.seek(to: CMTime(seconds: start, preferredTimescale: 90_000),
+                        toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] finished in
+                Task { @MainActor in
+                    guard let self, finished, self.isPlaying else { return }
+                    self.player.rate = self.playingRate
+                }
+            }
         }
     }
 
@@ -414,8 +487,17 @@ final class ClipPlayerController {
 
     func play() {
         guard clip != nil else { return }
-        // Start over if we're sitting on the last frame.
-        if currentTime >= duration - clock.seconds(ofFrame: 1) {
+        isPlayingBackward = false
+        applyLoopRange()
+        let lastFrame = clock.seconds(ofFrame: 1)
+        if loopMode != .off {
+            // Looping plays the marked range, so start inside it.
+            let range = markedRange
+            if currentTime < range.lowerBound || currentTime >= range.upperBound - lastFrame {
+                seek(to: range.lowerBound)
+            }
+        } else if currentTime >= duration - lastFrame {
+            // Start over if we're sitting on the last frame.
             seek(to: inPoint ?? 0)
         }
         player.playImmediately(atRate: playbackSpeed)
@@ -425,6 +507,7 @@ final class ClipPlayerController {
     func pause() {
         player.pause()
         isPlaying = false
+        isPlayingBackward = false
     }
 
     func seek(to seconds: Double) {
@@ -449,6 +532,7 @@ final class ClipPlayerController {
         get { subclip.map(\.start) ?? clip?.inPoint }
         set {
             if let subclip { subclip.start = newValue ?? 0 } else { clip?.inPoint = newValue }
+            applyLoopRange()
         }
     }
 
@@ -457,6 +541,7 @@ final class ClipPlayerController {
         get { subclip.map { min($0.end ?? duration, duration) } ?? clip?.outPoint }
         set {
             if let subclip { subclip.end = newValue } else { clip?.outPoint = newValue }
+            applyLoopRange()
         }
     }
 
@@ -504,11 +589,26 @@ final class ClipPlayerController {
         seek(to: clock.seconds(ofFrame: boundary - 1))
     }
 
+    /// Moves the in point by whole frames (negative is earlier) and shows that frame.
+    func nudgeIn(by frames: Int) {
+        guard clip != nil else { return }
+        let boundary = Int(((inPoint ?? 0) * clock.fps).rounded())
+        dragIn(to: clock.seconds(ofFrame: boundary + frames))
+    }
+
+    /// Moves the out point by whole frames (negative is earlier) and shows the last included frame.
+    func nudgeOut(by frames: Int) {
+        guard clip != nil else { return }
+        let boundary = Int(((outPoint ?? duration) * clock.fps).rounded())
+        dragOut(to: clock.seconds(ofFrame: boundary + frames))
+    }
+
     /// Clears a source video's marks. A subclip keeps its range.
     func clearInOut() {
         guard subclip == nil else { return }
         clip?.inPoint = nil
         clip?.outPoint = nil
+        applyLoopRange()
     }
 
     func goToIn() {

@@ -25,6 +25,10 @@ final class Clip: Identifiable {
     var hasVideo = true
     var hasAudio = true
     var thumbnails: [Thumbnail] = []
+    /// The sound's waveform, read when the clip is first shown in the viewer. `nil` until then,
+    /// or when there's no sound.
+    var waveform: Waveform?
+    var isWaveformRead = false
     var isLoaded = false
     var loadError: String?
 

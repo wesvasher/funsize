@@ -6,6 +6,10 @@ struct TimelineEditorView: View {
     let playback: TimelinePlayback
     @State private var pointsPerSecond: Double = 30
     @State private var visibleWidth: CGFloat = 0
+    /// How far the strip is scrolled, and its full width, for the navigator.
+    @State private var scrollX: CGFloat = 0
+    @State private var contentWidth: CGFloat = 0
+    @State private var scrollPosition = ScrollPosition(edge: .leading)
     @State private var isTargeted = false
     @FocusState private var isFocused: Bool
 
@@ -68,6 +72,11 @@ struct TimelineEditorView: View {
                 } isTargeted: { isTargeted = $0 }
             }
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { visibleWidth = $0 }
+            .scrollPosition($scrollPosition)
+            .onScrollGeometryChange(for: [CGFloat].self) { [$0.contentOffset.x, $0.contentSize.width] } action: { _, new in
+                scrollX = new[0]
+                contentWidth = new[1]
+            }
             .overlay {
                 if store.timeline.isEmpty {
                     Text("Drag clips here to combine them")
@@ -100,7 +109,14 @@ struct TimelineEditorView: View {
             Text("\(store.timeline.count) clips · \(store.timelineDuration.timecode)")
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
-            Spacer()
+            if isZoomedIn {
+                navigator
+                    .frame(minWidth: 80, maxWidth: .infinity)
+                    .padding(.horizontal, 8)
+                    .transition(.opacity)
+            } else {
+                Spacer()
+            }
             OutputLevelMeter(audio: store.timelineAudio)
                 .padding(.trailing, 8)
             HStack(spacing: 4) {
@@ -129,6 +145,42 @@ struct TimelineEditorView: View {
         }
         .padding(.horizontal, padding)
         .padding(.vertical, 8)
+        .animation(.easeOut(duration: 0.15), value: isZoomedIn)
+    }
+
+    /// Whether the clips run past the visible width (so the strip scrolls).
+    private var isZoomedIn: Bool {
+        !store.timeline.isEmpty && visibleWidth > 0 && contentWidth > visibleWidth + 1
+    }
+
+    /// The whole timeline in miniature, with the part in view outlined.
+    private var navigator: some View {
+        let layout = layout
+        let items = store.timeline
+        return StripNavigator(
+            contentWidth: contentWidth,
+            visible: scrollX...(scrollX + visibleWidth),
+            playheadX: layout.x(at: playback.time),
+            scroll: { left in
+                scrollX = left
+                scrollPosition.scrollTo(x: left)
+            },
+            close: { pointsPerSecond = fitPointsPerSecond }
+        ) { width in
+            let scale = width / max(1, contentWidth)
+            ZStack(alignment: .topLeading) {
+                Rectangle().fill(.quaternary.opacity(0.5))
+                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                    if let clip = store.clip(for: item.clipID) {
+                        let start = layout.start + layout.widths[..<index].reduce(0, +) + layout.spacing * CGFloat(index)
+                        ClipThumbnail(clip: clip, time: store.trimRange(of: item).lowerBound)
+                            .frame(width: max(1, layout.widths[index] * scale - 1))
+                            .clipShape(RoundedRectangle(cornerRadius: 2))
+                            .offset(x: start * scale)
+                    }
+                }
+            }
+        }
     }
 
     // MARK: Zoom
@@ -209,15 +261,54 @@ struct TimelineEditorView: View {
     }
 
     /// A tall white line across the clips at the current time, like the clip viewer's scrubber.
+    /// It can be grabbed and dragged: the grab area is a few points either side of the line,
+    /// so clicks farther away still select the clip underneath.
     private var playhead: some View {
         GeometryReader { proxy in
-            RoundedRectangle(cornerRadius: 1.5)
-                .fill(.white)
-                .shadow(radius: 2)
-                .frame(width: 3, height: proxy.size.height - padding / 2)
-                .offset(x: layout.x(at: playback.time) - 1.5, y: padding / 4)
+            TimelineView(.animation(paused: !playback.isPlaying)) { _ in
+                ZStack {
+                    Color.clear
+                    RoundedRectangle(cornerRadius: 1.5)
+                        .fill(.white)
+                        .shadow(radius: 2)
+                        .frame(width: playheadIsActive ? 4 : 2)
+                        // Faint while thin, so it doesn't hide the picture; full strength when grabbed.
+                        .opacity(playheadIsActive ? 1 : 0.25)
+                }
+                .animation(.easeOut(duration: 0.12), value: playheadIsActive)
+                .frame(width: playheadGrabWidth, height: proxy.size.height - padding / 2)
+                .contentShape(Rectangle())
+                .offset(x: playheadX - playheadGrabWidth / 2, y: padding / 4)
+                .gesture(playheadDrag)
+                .onHover { playheadIsHovered = $0 }
+                .help("Drag to move the playhead")
+            }
         }
-        .allowsHitTesting(false)
+    }
+
+    /// Where the playhead line sits. While playing it glides through the gaps between clips;
+    /// otherwise it sits exactly on the frame shown.
+    private var playheadX: CGFloat {
+        playback.isPlaying ? layout.continuousX(at: playback.liveTime) : layout.x(at: playback.time)
+    }
+
+    /// How wide the playhead's grab area is.
+    private let playheadGrabWidth: CGFloat = 12
+    /// Where the playhead was when a drag began, so grabbing it slightly off the line doesn't make it jump.
+    @State private var playheadDragStart: CGFloat?
+    @State private var playheadIsHovered = false
+    /// The line thickens while the pointer is over it, and stays thick while it's being dragged.
+    private var playheadIsActive: Bool { playheadIsHovered || playheadDragStart != nil }
+
+    private var playheadDrag: some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .named("timelineStrip"))
+            .onChanged { value in
+                let layout = layout
+                let start = playheadDragStart ?? layout.x(at: playback.time)
+                playheadDragStart = start
+                playback.scrub(to: layout.time(at: start + value.translation.width))
+            }
+            .onEnded { _ in playheadDragStart = nil }
     }
 
     /// Shows the item's subclip (or its whole source video) in the clip viewer.
@@ -315,6 +406,24 @@ nonisolated struct TimelineLayout {
             if seconds < clipStart + duration || isLast {
                 let fraction = duration > 0 ? min(max((seconds - clipStart) / duration, 0), 1) : 0
                 return cursor + CGFloat(fraction) * widths[index]
+            }
+            cursor += widths[index] + spacing
+            clipStart += duration
+        }
+        return start
+    }
+
+    /// Like `x(at:)`, but each clip's span includes the gap after it, so the playhead glides
+    /// through the gaps during playback instead of hopping across them.
+    func continuousX(at seconds: Double) -> CGFloat {
+        var cursor = start
+        var clipStart = 0.0
+        for (index, duration) in durations.enumerated() {
+            let isLast = index == durations.count - 1
+            let span = widths[index] + (isLast ? 0 : spacing)
+            if seconds < clipStart + duration || isLast {
+                let fraction = duration > 0 ? min(max((seconds - clipStart) / duration, 0), 1) : 0
+                return cursor + CGFloat(fraction) * span
             }
             cursor += widths[index] + spacing
             clipStart += duration

@@ -7,8 +7,8 @@ import SwiftUI
 struct InspectorPanel<Sections: View, Footer: View>: View {
     @ViewBuilder let sections: () -> Sections
     @ViewBuilder let footer: () -> Footer
-    /// How far the sections' area runs under the scroll bar.
-    @State private var scrollBarOverhang: CGFloat = 0
+    /// The always-visible small scroll bar's width.
+    private static var scrollBarWidth: CGFloat { NSScroller.scrollerWidth(for: .small, scrollerStyle: .legacy) }
 
     /// Space between the sections and the panel's sides.
     static var sidePadding: CGFloat { 5 }
@@ -17,18 +17,23 @@ struct InspectorPanel<Sections: View, Footer: View>: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: Self.sectionSpacing) {
-                    sections()
+            // The reader takes the panel's space whatever the sections need, so their width
+            // can't feed back into the panel's size.
+            GeometryReader { panel in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: Self.sectionSpacing) {
+                        sections()
+                    }
+                    .padding(.horizontal, Self.sidePadding)
+                    .padding(.vertical, 10)
+                    // The scroll bar always shows, but SwiftUI doesn't always narrow the content
+                    // for it. Size the sections from the panel's width minus the bar. (Measuring
+                    // the overlap made the panel flicker; measuring the scroll view's own width
+                    // looped the window's layout until the app locked up.)
+                    .frame(width: max(0, panel.size.width - Self.scrollBarWidth), alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(ThinScrollers())
                 }
-                .padding(.leading, Self.sidePadding)
-                // The scroll bar always shows, but SwiftUI doesn't always narrow the content for it
-                // (it runs underneath until it scrolls). Pad by however much is hidden, so the
-                // sections always stop the same distance from the scroll bar.
-                .padding(.trailing, max(0, Self.sidePadding + scrollBarOverhang))
-                .padding(.vertical, 10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(ThinScrollers { scrollBarOverhang = $0 })
             }
             Divider()
             // Buttons below the sections (also keeps the scroll bar clear of the window's rounded corner).
@@ -110,19 +115,11 @@ struct InspectorSection<Accessory: View, Content: View>: View {
 /// Gives the surrounding scroll view an always-visible scroller at the small size,
 /// instead of the regular-width one.
 struct ThinScrollers: NSViewRepresentable {
-    /// Called with how far the content runs under the scroll bar (or, if negative, how far
-    /// short of it it stops), so the view can pad to keep a fixed gap beside the scroll bar.
-    var onOverhang: (CGFloat) -> Void = { _ in }
-
     func makeNSView(context: Context) -> NSView { Probe() }
-    func updateNSView(_ nsView: NSView, context: Context) {
-        (nsView as? Probe)?.onOverhang = onOverhang
-    }
+    func updateNSView(_ nsView: NSView, context: Context) {}
 
     private final class Probe: NSView {
         private var observer: NSObjectProtocol?
-        var onOverhang: (CGFloat) -> Void = { _ in }
-        private var lastOverhang: CGFloat?
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
@@ -137,26 +134,6 @@ struct ThinScrollers: NSViewRepresentable {
                     }
                 }
             }
-        }
-
-        override func layout() {
-            super.layout()
-            measure()
-        }
-
-        override func setFrameSize(_ newSize: NSSize) {
-            super.setFrameSize(newSize)
-            measure()
-        }
-
-        /// The content's right edge compared with the visible area's (which ends at the scroll bar).
-        private func measure() {
-            guard let clip = enclosingScrollView?.contentView else { return }
-            let overhang = (convert(bounds, to: clip).maxX - clip.bounds.maxX).rounded()
-            guard overhang != lastOverhang else { return }
-            lastOverhang = overhang
-            let report = onOverhang
-            DispatchQueue.main.async { report(overhang) }
         }
 
         private func apply() {
