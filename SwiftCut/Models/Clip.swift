@@ -29,6 +29,9 @@ final class Clip: Identifiable {
     /// or when there's no sound.
     var waveform: Waveform?
     var isWaveformRead = false
+    /// Volume keyframes, drawn on the waveform in the clip viewer. The timeline follows them where
+    /// it plays the whole source video; subclips have their own (see `Subclip.volume`).
+    var volume = VolumeEnvelope()
     var isLoaded = false
     var loadError: String?
 
@@ -96,6 +99,9 @@ final class Clip: Identifiable {
     /// Color correction from the Grade section, applied after the LUT.
     var grade = ColorGrade()
 
+    /// Scale, position, and background from the Video section, applied after everything else.
+    var layout = FrameLayout()
+
     /// The chosen LUT, if it's still in the library.
     var lut: ColorLUT? { LUTLibrary.shared.lut(id: lutID) }
     /// The chosen look, if it's still in the library.
@@ -124,7 +130,8 @@ final class Clip: Identifiable {
             sharpen: canEnhance ? Float(sharpen) : 0,
             lut: canEnhance && lutEnabled ? lut.map { AppliedLUT(lut: $0, intensity: Float(lutIntensity)) } : nil,
             look: canEnhance && lookEnabled ? look.map { AppliedLUT(lut: $0, intensity: Float(lookIntensity)) } : nil,
-            grade: canEnhance && !grade.isIdentity ? grade : nil
+            grade: canEnhance && !grade.isIdentity ? grade : nil,
+            layout: canEnhance && !layout.isIdentity ? layout : nil
         )
     }
 
@@ -142,10 +149,11 @@ final class Clip: Identifiable {
             && !denoise && denoiseStrength == 0.5 && upscale == .off && sharpen == 0
             && lutID == defaultLUTID && lutIntensity == 1 && lutEnabled
             && lookID == nil && lookIntensity == 1 && lookEnabled && grade.isIdentity
+            && layout == FrameLayout()
     }
 
     /// Puts everything set in the inspector back as it was when the clip was imported:
-    /// timing, captions, effects, LUT, look, and grade. In and out marks are kept.
+    /// timing, captions, effects, LUT, look, grade, and framing. In and out marks are kept.
     func resetAll() {
         deinterlace = false
         fieldOrderChoice = nil
@@ -158,6 +166,7 @@ final class Clip: Identifiable {
         lookIntensity = 1
         lookEnabled = true
         grade = ColorGrade()
+        layout = FrameLayout()
     }
 
     /// Turns the Effects section back to its defaults (Timing is left alone).
@@ -217,6 +226,8 @@ final class Clip: Identifiable {
         r.lookIntensity = lookIntensity
         r.lookEnabled = lookEnabled
         r.grade = grade
+        r.volume = volume.isEmpty ? nil : volume
+        r.layout = layout == FrameLayout() ? nil : layout
         return r
     }
 
@@ -239,6 +250,10 @@ final class Clip: Identifiable {
         if lookIntensity != r.lookIntensity { lookIntensity = r.lookIntensity }
         if lookEnabled != r.lookEnabled { lookEnabled = r.lookEnabled }
         if grade != r.grade { grade = r.grade }
+        let volume = r.volume ?? VolumeEnvelope()
+        if self.volume != volume { self.volume = volume }
+        let layout = r.layout ?? FrameLayout()
+        if self.layout != layout { self.layout = layout }
     }
 
     var poster: CGImage? { colored(thumbnails.indices.first) }
@@ -300,6 +315,8 @@ final class Subclip: Identifiable {
     /// Range in the source video, in seconds. `end == nil` means the end of the source.
     var start: Double
     var end: Double?
+    /// The subclip's own volume keyframes (in source video seconds), separate from the source's.
+    var volume = VolumeEnvelope()
 
     init(id: UUID = UUID(), sourceID: UUID, name: String, start: Double, end: Double?) {
         self.id = id
@@ -316,13 +333,15 @@ final class Subclip: Identifiable {
     }
 
     var record: ProjectFile.SubclipRecord {
-        .init(id: id, sourceID: sourceID, name: name, start: start, end: end)
+        .init(id: id, sourceID: sourceID, name: name, start: start, end: end, volume: volume.isEmpty ? nil : volume)
     }
 
     func apply(_ r: ProjectFile.SubclipRecord) {
         if name != r.name { name = r.name }
         if start != r.start { start = r.start }
         if end != r.end { end = r.end }
+        let volume = r.volume ?? VolumeEnvelope()
+        if self.volume != volume { self.volume = volume }
     }
 
     /// URL used to drag this subclip from the sidebar onto the timeline.

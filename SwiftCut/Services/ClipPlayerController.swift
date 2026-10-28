@@ -45,6 +45,39 @@ final class ClipPlayerController {
 
     static let playbackSpeeds: [Float] = [0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4]
 
+    // MARK: Volume
+
+    /// Plays the clip's volume keyframes (one span over the whole file, in source time).
+    @ObservationIgnored private let volume = TimelineAudio()
+    /// The waveform is tall and shows the volume line to drag (Audio section › Edit Volume).
+    var isEditingVolume = false {
+        didSet { if !isEditingVolume { selectedKeyframe = nil } }
+    }
+    /// The volume keyframe last clicked, shown in the Audio section's Selected Keyframe area.
+    var selectedKeyframe: UUID?
+
+    /// The volume keyframes being viewed and edited: the subclip's own, or the source video's.
+    var volumeEnvelope: VolumeEnvelope {
+        get { subclip?.volume ?? clip?.volume ?? VolumeEnvelope() }
+        set {
+            if let subclip { subclip.volume = newValue } else { clip?.volume = newValue }
+        }
+    }
+
+    /// Call when the volume keyframes change; playback follows at once.
+    func updateVolume() {
+        volume.spans = [.init(start: 0, end: .greatestFiniteMagnitude, gainDB: 0, envelope: volumeEnvelope)]
+    }
+
+    /// Plays `item`'s sound through the volume keyframes.
+    private func attachVolume(to item: AVPlayerItem) {
+        let volume = volume
+        Task {
+            guard let tracks = try? await item.asset.loadTracks(withMediaType: .audio), !tracks.isEmpty else { return }
+            item.audioMix = volume.audioMix(for: tracks)
+        }
+    }
+
     @ObservationIgnored private var timeObserver: Any?
     @ObservationIgnored private var endObserver: NSObjectProtocol?
 
@@ -69,8 +102,16 @@ final class ClipPlayerController {
 
     /// Effects currently built into the preview (with the LUT and grade left out: see `structure`).
     @ObservationIgnored private var appliedSettings = EnhanceSettings()
+    /// How sharp the preview draws (the video toolbar's Quality menu). It only matters when the
+    /// clip has effects, color, or framing: otherwise the video plays as is, which is lightest.
+    /// Run `applyEffects()` after changing it.
+    var previewQuality = PreviewQuality.full
+    /// The quality the preview was built with (1 = full; also 1 without effects).
+    @ObservationIgnored private var appliedDivisor = 1
     /// The LUT and grade the preview shows. Changing them updates it in place, without a rebuild.
     let liveColor = LiveColor()
+    /// The scale, position, and background the preview shows, also changed in place.
+    let liveLayout = LiveLayout(showsCheckerboard: true)
     /// The preview with effects, and the same without the Effects section (for "Show Original").
     @ObservationIgnored private var effectsItem: AVPlayerItem?
     @ObservationIgnored private var originalItem: AVPlayerItem?
@@ -92,14 +133,19 @@ final class ClipPlayerController {
         if clip === self.clip {
             guard subclip?.id != self.subclip?.id else { return }
             self.subclip = subclip
+            selectedKeyframe = nil
+            updateVolume()
             pause()
             seek(to: subclip?.start ?? 0)
             return
         }
         self.subclip = subclip
         self.clip = clip
+        selectedKeyframe = nil
         pause()
         let item = AVPlayerItem(url: clip.url)
+        updateVolume()
+        attachVolume(to: item)
         effectsItem = item
         originalItem = nil
         isShowingOriginal = false
@@ -112,6 +158,7 @@ final class ClipPlayerController {
         attachFrameOutput(to: item)
         install(item)
         appliedSettings = EnhanceSettings()
+        appliedDivisor = 1
         currentTime = 0
         if let subclip { seek(to: subclip.start) }
     }
@@ -122,20 +169,31 @@ final class ClipPlayerController {
         guard let clip else { return }
         let settings = clip.enhanceSettings
         liveColor.value = settings.colorLook ?? ColorLook()
-        guard settings.structure != appliedSettings else { return }
+        liveLayout.value = settings.layout ?? FrameLayout()
+        let divisor = settings.isActive ? previewQuality.divisor : 1
+        guard settings.structure != appliedSettings || divisor != appliedDivisor else { return }
         do {
-            let item = try await Self.makeItem(url: clip.url, settings: settings, liveColor: liveColor)
-            // The comparison version keeps Timing (deinterlace) so both play at the same frame rate.
-            let original = settings.hasLook ? try await Self.makeItem(url: clip.url, settings: settings.timingOnly) : nil
+            let item = try await Self.makeItem(url: clip.url, settings: settings, liveColor: liveColor,
+                                               liveLayout: liveLayout, previewDivisor: divisor)
+            // The comparison version keeps Timing (deinterlace) and the framing, so both play at the
+            // same frame rate and the picture stays put.
+            let original = settings.hasLook
+                ? try await Self.makeItem(url: clip.url, settings: settings.timingOnly, liveLayout: liveLayout,
+                                          previewDivisor: divisor) : nil
             guard self.clip?.id == clip.id, !Task.isCancelled else { return }
             // New versions: frames stored for the old ones no longer apply.
             frameOutputs = [:]
             storedFrames = [:]
             attachFrameOutput(to: item)
-            if let original { attachFrameOutput(to: original) }
+            attachVolume(to: item)
+            if let original {
+                attachFrameOutput(to: original)
+                attachVolume(to: original)
+            }
             effectsItem = item
             originalItem = original
             appliedSettings = settings.structure
+            appliedDivisor = divisor
             clip.effectsError = nil
             switchVersion(to: isShowingOriginal ? (original ?? item) : item)
         } catch {
@@ -253,6 +311,16 @@ final class ClipPlayerController {
             }
             await finishColorAdjustment(change)
         }
+    }
+
+    /// Shows the clip's current scale, position, and background right away. Turning them on or
+    /// off still needs `applyEffects()`, which the view runs shortly after.
+    func updateLayout() {
+        guard let clip else { return }
+        liveLayout.value = clip.enhanceSettings.layout ?? FrameLayout()
+        guard appliedSettings.layout != nil, let item = player.currentItem else { return }
+        storedFrames[ObjectIdentifier(item)] = nil
+        if !isPlaying { Self.rerender(item) }
     }
 
     /// Draws the paused frame again so it shows the current color.
@@ -377,8 +445,10 @@ final class ClipPlayerController {
         colorProxy = nil
     }
 
-    private static func makeItem(url: URL, settings: EnhanceSettings, liveColor: LiveColor? = nil) async throws -> AVPlayerItem {
-        let playable = try await Enhancer.makePlayable(url: url, settings: settings, liveColor: liveColor)
+    private static func makeItem(url: URL, settings: EnhanceSettings, liveColor: LiveColor? = nil,
+                                 liveLayout: LiveLayout? = nil, previewDivisor: Int = 1) async throws -> AVPlayerItem {
+        let playable = try await Enhancer.makePlayable(url: url, settings: settings, liveColor: liveColor,
+                                                       liveLayout: liveLayout, previewDivisor: previewDivisor)
         let item = AVPlayerItem(asset: playable.asset)
         item.videoComposition = playable.videoComposition
         return item
@@ -397,12 +467,18 @@ final class ClipPlayerController {
     }
 
     /// The frame on screen at full size, as the viewer shows it (effects, LUT, and grade;
-    /// without them while Show Original is held).
+    /// without them while Show Original is held). Full quality even when the preview is lighter.
     func currentFrameImage() async throws -> CGImage {
-        guard let item = player.currentItem, clip?.hasVideo == true else {
+        guard let item = player.currentItem, let clip, clip.hasVideo else {
             throw EnhanceError.failed("There's no video frame to copy.")
         }
-        return try await FrameClipboard.currentFrame(of: item)
+        guard appliedDivisor > 1 else { return try await FrameClipboard.currentFrame(of: item) }
+        let time = item.currentTime()
+        let original = item === originalItem && item !== effectsItem
+        let settings = original ? clip.enhanceSettings.timingOnly : clip.enhanceSettings
+        let playable = try await Enhancer.makePlayable(url: clip.url, settings: settings,
+                                                       liveColor: original ? nil : liveColor, liveLayout: liveLayout)
+        return try await FrameClipboard.frame(of: playable.asset, videoComposition: playable.videoComposition, at: time)
     }
 
     private func install(_ item: AVPlayerItem) {

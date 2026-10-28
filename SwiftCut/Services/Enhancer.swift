@@ -44,9 +44,12 @@ nonisolated struct EnhanceSettings: Hashable, Sendable {
     var look: AppliedLUT?
     /// Color correction (Grade section), applied after the LUT and look. `nil` when untouched.
     var grade: ColorGrade?
+    /// Scale, position, and background (Video section), applied last. `nil` when the picture
+    /// fills the frame as is.
+    var layout: FrameLayout?
 
     var isActive: Bool {
-        fieldOrder != nil || hasLook
+        fieldOrder != nil || hasLook || layout != nil
     }
 
     /// Anything "Show Original" can turn off: effects, a LUT, a look, or a grade.
@@ -67,6 +70,8 @@ nonisolated struct EnhanceSettings: Hashable, Sendable {
         copy.lut = nil
         copy.look = nil
         copy.grade = hasColor ? ColorGrade() : nil
+        // The framing follows live too (`LiveLayout`): only whether there is any counts.
+        copy.layout = layout == nil ? nil : FrameLayout(scale: 0.5)
         return copy
     }
 
@@ -75,9 +80,10 @@ nonisolated struct EnhanceSettings: Hashable, Sendable {
         denoiseStrength != nil || upscale != .off || sharpen > 0
     }
 
-    /// The same settings with the Effects section turned off, for "Show Original".
+    /// The same settings with the Effects section turned off, for "Show Original". The framing
+    /// stays, so the picture doesn't jump.
     var timingOnly: EnhanceSettings {
-        EnhanceSettings(fieldOrder: fieldOrder)
+        EnhanceSettings(fieldOrder: fieldOrder, layout: layout)
     }
 }
 
@@ -138,6 +144,28 @@ nonisolated enum Enhancer {
         CGSize(width: max(2, (size.width / 2).rounded() * 2), height: max(2, (size.height / 2).rounded() * 2))
     }
 
+    /// The size the effects work at in a preview `divisor` times smaller (see `PreviewQuality`).
+    /// Goes less small when the effects can't run that small, and stays at least 90 pixels high.
+    static func previewSize(displaySize: CGSize, settings: EnhanceSettings, divisor: Int) -> CGSize {
+        let full = evenSize(displaySize)
+        var divisor = divisor
+        while divisor > 1 {
+            let size = evenSize(CGSize(width: full.width / CGFloat(divisor), height: full.height / CGFloat(divisor)))
+            if min(size.width, size.height) >= 90, effectsSupport(settings, size: size) { return size }
+            divisor /= 2
+        }
+        return full
+    }
+
+    private static func effectsSupport(_ settings: EnhanceSettings, size: CGSize) -> Bool {
+        if settings.denoiseStrength != nil, VTTemporalNoiseFilterConfiguration(
+            frameWidth: Int(size.width), frameHeight: Int(size.height),
+            sourcePixelFormat: kCVPixelFormatType_Lossless_420YpCbCr8BiPlanarVideoRange) == nil {
+            return false
+        }
+        return canUpscale(settings.upscale, displaySize: size)
+    }
+
     // MARK: Building
 
     /// An asset plus video composition that plays or exports `url` with `settings` applied.
@@ -146,12 +174,16 @@ nonisolated enum Enhancer {
     /// video is added several more times, each shifted by a frame. The compositor then receives the
     /// current frame and its neighbors together.
     /// `liveColor` lets the preview change the LUT and grade without rebuilding; exports use the settings'.
-    static func makePlayable(url: URL, settings: EnhanceSettings, liveColor: LiveColor? = nil) async throws -> (asset: AVAsset, videoComposition: AVVideoComposition?) {
+    /// `previewDivisor` above 1 works on a smaller picture, for a lighter preview (`PreviewQuality`).
+    static func makePlayable(url: URL, settings: EnhanceSettings, liveColor: LiveColor? = nil,
+                             liveLayout: LiveLayout? = nil, previewDivisor: Int = 1)
+        async throws -> (asset: AVAsset, videoComposition: AVVideoComposition?) {
         let source = AVURLAsset(url: url)
         guard settings.isActive else { return (source, nil) }
         try await checkModel(for: source, settings: settings)
         guard settings.denoiseStrength != nil else {
-            return (source, try await videoComposition(for: source, settings: settings, liveColor: liveColor))
+            return (source, try await videoComposition(for: source, settings: settings, liveColor: liveColor,
+                                                       liveLayout: liveLayout, previewDivisor: previewDivisor))
         }
 
         guard let video = try await source.loadTracks(withMediaType: .video).first else { return (source, nil) }
@@ -188,13 +220,14 @@ nonisolated enum Enhancer {
         let videoComposition = makeVideoComposition(
             settings: settings, duration: duration, sourceFrameDuration: step,
             mainTrack: main.trackID, neighborTracks: neighbors, displaySize: geometry.displaySize,
-            liveColor: liveColor
+            liveColor: liveColor, liveLayout: liveLayout, previewDivisor: previewDivisor
         )
         return (composition, videoComposition)
     }
 
     /// A video composition for `asset` without neighbor tracks (no noise reduction).
-    static func videoComposition(for asset: AVAsset, settings: EnhanceSettings, liveColor: LiveColor? = nil) async throws -> AVVideoComposition? {
+    static func videoComposition(for asset: AVAsset, settings: EnhanceSettings, liveColor: LiveColor? = nil,
+                                 liveLayout: LiveLayout? = nil, previewDivisor: Int = 1) async throws -> AVVideoComposition? {
         guard settings.isActive, let video = try await asset.loadTracks(withMediaType: .video).first else { return nil }
         try await checkModel(for: asset, settings: settings)
         var settings = settings
@@ -205,7 +238,7 @@ nonisolated enum Enhancer {
             sourceFrameDuration: try await frameDuration(of: video),
             mainTrack: video.trackID, neighborTracks: [:],
             displaySize: try await VideoGeometry.load(video).displaySize,
-            liveColor: liveColor
+            liveColor: liveColor, liveLayout: liveLayout, previewDivisor: previewDivisor
         )
     }
 
@@ -222,9 +255,11 @@ nonisolated enum Enhancer {
     private static func makeVideoComposition(
         settings: EnhanceSettings, duration: CMTime, sourceFrameDuration: CMTime,
         mainTrack: CMPersistentTrackID, neighborTracks: [Int: CMPersistentTrackID], displaySize: CGSize,
-        liveColor: LiveColor?
+        liveColor: LiveColor?, liveLayout: LiveLayout?, previewDivisor: Int
     ) -> AVVideoComposition {
-        let display = evenSize(displaySize)
+        let full = evenSize(displaySize)
+        let display = previewDivisor > 1
+            ? previewSize(displaySize: displaySize, settings: settings, divisor: previewDivisor) : full
         let outputFrameDuration = settings.fieldOrder != nil
             ? CMTimeMultiplyByRatio(sourceFrameDuration, multiplier: 1, divisor: 2)
             : sourceFrameDuration
@@ -232,8 +267,9 @@ nonisolated enum Enhancer {
             timeRange: CMTimeRange(start: .zero, duration: duration),
             settings: settings, mainTrack: mainTrack, neighborTracks: neighborTracks,
             sourceFrameDuration: sourceFrameDuration, outputFrameDuration: outputFrameDuration,
-            displaySize: display,
-            color: settings.colorLook.map { liveColor ?? LiveColor($0) }
+            displaySize: display, previewScale: display.height / full.height,
+            color: settings.colorLook.map { liveColor ?? LiveColor($0) },
+            layout: settings.layout.map { liveLayout ?? LiveLayout($0) }
         )
         return AVVideoComposition(configuration: .init(
             customVideoCompositorClass: EnhanceCompositor.self,
@@ -263,14 +299,22 @@ nonisolated final class EnhanceInstruction: NSObject, AVVideoCompositionInstruct
     let neighborTracks: [Int: CMPersistentTrackID]
     let sourceFrameDuration: CMTime
     let outputFrameDuration: CMTime
+    /// The size the effects work at: the picture's shape-corrected size, or smaller in a lighter preview.
     let displaySize: CGSize
+    /// `displaySize` as a fraction of the full size (1 except in a lighter preview).
+    let previewScale: CGFloat
     /// The LUT and grade to apply, read for every frame. `nil` when there's neither.
     let color: LiveColor?
+    /// The scale, position, and background, read for every frame. `nil` when untouched.
+    let layout: LiveLayout?
 
     init(timeRange: CMTimeRange, settings: EnhanceSettings, mainTrack: CMPersistentTrackID,
          neighborTracks: [Int: CMPersistentTrackID], sourceFrameDuration: CMTime,
-         outputFrameDuration: CMTime, displaySize: CGSize, color: LiveColor? = nil) {
+         outputFrameDuration: CMTime, displaySize: CGSize, previewScale: CGFloat = 1,
+         color: LiveColor? = nil, layout: LiveLayout? = nil) {
+        self.previewScale = previewScale
         self.color = color
+        self.layout = layout
         self.timeRange = timeRange
         self.settings = settings
         self.mainTrack = mainTrack
@@ -449,7 +493,7 @@ nonisolated final class EnhancePipeline {
         if scaler != nil {
             picture = try upscale(picture, time: time, isContinuous: isContinuous)
         }
-        if settings.sharpen > 0 || instruction.color != nil {
+        if settings.sharpen > 0 || instruction.color != nil || instruction.layout != nil {
             try finish(picture, into: output)
         } else {
             try copy(picture, into: output)
@@ -555,7 +599,7 @@ nonisolated final class EnhancePipeline {
 
     // MARK: Sharpening and output
 
-    /// Color LUT, grade, then sharpening, with Core Image.
+    /// Color LUT, grade, sharpening, then the scale and position, with Core Image.
     private func finish(_ picture: CVPixelBuffer, into output: CVPixelBuffer) throws {
         if sharpenPool == nil {
             sharpenPool = try Self.pool(width: CVPixelBufferGetWidth(output), height: CVPixelBufferGetHeight(output), format: kCVPixelFormatType_32BGRA)
@@ -576,9 +620,15 @@ nonisolated final class EnhancePipeline {
             let filter = CIFilter(name: "CISharpenLuminance")!
             filter.setValue(image.clampedToExtent(), forKey: kCIInputImageKey)
             filter.setValue(Double(settings.sharpen) * 1.5, forKey: kCIInputSharpnessKey)
-            filter.setValue(Double(settings.upscale.factor), forKey: kCIInputRadiusKey)
+            // The radius follows the picture's size, so a lighter preview looks the same, only softer.
+            filter.setValue(Double(settings.upscale.factor) * instruction.previewScale, forKey: kCIInputRadiusKey)
             guard let sharpened = filter.outputImage?.cropped(to: original.extent) else { throw EnhanceError.failed("Couldn't sharpen.") }
             image = sharpened
+        }
+
+        if let live = instruction.layout {
+            image = FrameLayoutStage.apply(image.cropped(to: original.extent), layout: live.value,
+                                           frame: original.extent, checkerboard: live.showsCheckerboard)
         }
         ciContext.render(image.cropped(to: original.extent), to: output, bounds: original.extent, colorSpace: color)
     }

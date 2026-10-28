@@ -2,11 +2,14 @@ import AppKit
 import SwiftUI
 
 /// The bar above a video viewer (clip viewer and timeline): the picture size, then Copy Frame,
-/// Export Images, zoom, and the master volume on the right. `leading` holds controls only one viewer has.
+/// Export Images, quality, zoom, and the master volume on the right. `leading` holds controls only one viewer has.
 struct VideoToolbar<Leading: View>: View {
     /// The picture's size in pixels, or `nil` if not known yet.
     let pictureSize: CGSize?
     @Binding var zoom: ViewerZoom
+    @Binding var quality: PreviewQuality
+    /// The Quality menu's tooltip.
+    let qualityHelp: String
     let canCopy: Bool
     let isExporting: Bool
     let copyFrame: () -> Void
@@ -32,6 +35,8 @@ struct VideoToolbar<Leading: View>: View {
                 .buttonStyle(.borderless)
                 .disabled(!canCopy || isExporting)
                 .help("Save the full frame, and the part in view, as PNG images in the project's folder")
+            PreviewQualityMenu(quality: $quality)
+                .help(qualityHelp)
             ViewerZoomControl(zoom: $zoom)
             Divider().frame(height: 14)
             MonitorVolumeControl()
@@ -43,10 +48,34 @@ struct VideoToolbar<Leading: View>: View {
 }
 
 extension VideoToolbar where Leading == EmptyView {
-    init(pictureSize: CGSize?, zoom: Binding<ViewerZoom>, canCopy: Bool, isExporting: Bool,
-         copyFrame: @escaping () -> Void, exportImages: @escaping () -> Void) {
-        self.init(pictureSize: pictureSize, zoom: zoom, canCopy: canCopy, isExporting: isExporting,
+    init(pictureSize: CGSize?, zoom: Binding<ViewerZoom>, quality: Binding<PreviewQuality>, qualityHelp: String,
+         canCopy: Bool, isExporting: Bool, copyFrame: @escaping () -> Void, exportImages: @escaping () -> Void) {
+        self.init(pictureSize: pictureSize, zoom: zoom, quality: quality, qualityHelp: qualityHelp,
+                  canCopy: canCopy, isExporting: isExporting,
                   copyFrame: copyFrame, exportImages: exportImages, leading: { EmptyView() })
+    }
+}
+
+/// Picks the preview quality: full, or a smaller picture that plays more easily.
+private struct PreviewQualityMenu: View {
+    @Binding var quality: PreviewQuality
+
+    var body: some View {
+        Menu {
+            Picker("Preview Quality", selection: $quality) {
+                ForEach(PreviewQuality.allCases) { choice in
+                    Text(choice.menuTitle).tag(choice)
+                }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            Label(quality.title, systemImage: quality == .full ? "sparkles.tv" : "gauge.with.dots.needle.33percent")
+                .labelStyle(.titleAndIcon)
+                .font(.callout.monospacedDigit())
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .accessibilityLabel("Preview Quality: \(quality.menuTitle)")
     }
 }
 

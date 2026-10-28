@@ -32,6 +32,7 @@ struct TimelineEditorView: View {
                                 name: store.name(of: item),
                                 isSubclip: item.subclipID != nil,
                                 range: store.trimRange(of: item),
+                                volume: store.volume(of: item),
                                 isSelected: item.id == store.selectedTimelineItemID
                             )
                             .frame(width: width(of: item))
@@ -133,12 +134,6 @@ struct TimelineEditorView: View {
                 }
                 .help("Zoom in")
                 .disabled(pointsPerSecond >= zoomRange.upperBound)
-                Button { pointsPerSecond = fitPointsPerSecond } label: {
-                    Image(systemName: "arrow.right.and.line.vertical.and.arrow.left")
-                }
-                .help("Zoom out to fit the whole timeline")
-                .disabled(store.timeline.isEmpty)
-                .padding(.leading, 4)
             }
             .buttonStyle(.borderless)
             .foregroundStyle(.secondary)
@@ -341,6 +336,8 @@ private struct TimelineClipView: View {
     let name: String
     let isSubclip: Bool
     let range: ClosedRange<Double>
+    /// The volume keyframes it plays with (its subclip's own, or the source video's).
+    let volume: VolumeEnvelope
     let isSelected: Bool
 
     var body: some View {
@@ -348,18 +345,21 @@ private struct TimelineClipView: View {
             let count = max(1, Int(proxy.size.width / 80))
             let length = range.upperBound - range.lowerBound
 
-            ZStack(alignment: .bottomLeading) {
-                if clip.hasVideo {
-                    HStack(spacing: 0) {
-                        ForEach(0..<count, id: \.self) { index in
-                            ClipThumbnail(clip: clip, time: range.lowerBound + length * (Double(index) + 0.5) / Double(count))
-                                .frame(width: proxy.size.width / CGFloat(count))
+            ZStack(alignment: .topLeading) {
+                VStack(spacing: 1) {
+                    if clip.hasVideo {
+                        HStack(spacing: 0) {
+                            ForEach(0..<count, id: \.self) { index in
+                                ClipThumbnail(clip: clip, time: range.lowerBound + length * (Double(index) + 0.5) / Double(count))
+                                    .frame(width: proxy.size.width / CGFloat(count))
+                            }
                         }
                     }
-                } else {
-                    Rectangle().fill(Color.green.opacity(0.35))
-                    Image(systemName: "waveform")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    if clip.hasAudio || !clip.hasVideo {
+                        // Under the pictures, or the whole clip when it's only sound.
+                        waveform(width: proxy.size.width)
+                            .frame(height: clip.hasVideo ? min(40, max(16, proxy.size.height * 0.3)) : nil)
+                    }
                 }
 
                 HStack(spacing: 4) {
@@ -382,7 +382,20 @@ private struct TimelineClipView: View {
                 .strokeBorder(isSelected ? Color.accentColor : Color.primary.opacity(0.15), lineWidth: isSelected ? 3 : 1)
         }
         .contentShape(Rectangle())
+        .task(id: "\(clip.id) \(clip.isLoaded)") { await clip.readWaveform() }
         .help((isSubclip ? "\(name) (subclip of \(clip.name))" : "\(clip.name) (whole source video)") + ". Double-click to open it in the viewer.")
+    }
+
+    /// The part of the clip's sound this item plays, after its volume keyframes.
+    private func waveform(width: CGFloat) -> some View {
+        let duration = max(clip.duration, 0.001)
+        let length = max(range.upperBound - range.lowerBound, 0.001)
+        // The whole file at this item's scale, with only the item's part drawn.
+        let fullWidth = max(1, width * duration / length)
+        let start = CGFloat(range.lowerBound / duration) * fullWidth
+        return WaveformView(waveform: clip.waveform, isReading: clip.hasAudio && !clip.isWaveformRead,
+                            contentWidth: fullWidth, drawn: start...(start + max(1, width)),
+                            volume: volume, duration: duration, cornerRadius: 0)
     }
 }
 

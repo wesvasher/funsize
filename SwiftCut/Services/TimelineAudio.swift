@@ -13,6 +13,25 @@ nonisolated final class TimelineAudio: @unchecked Sendable {
         var start: Double
         var end: Double
         var gainDB: Double
+        /// The source video's volume keyframes, if it has any.
+        var envelope: VolumeEnvelope?
+        /// Seconds into the source video where the span starts (keyframe times are in source time).
+        var sourceStart = 0.0
+
+        init(start: Double, end: Double, gainDB: Double, envelope: VolumeEnvelope? = nil, sourceStart: Double = 0) {
+            self.start = start
+            self.end = end
+            self.gainDB = gainDB
+            self.envelope = envelope?.isEmpty == true ? nil : envelope
+            self.sourceStart = sourceStart
+        }
+
+        /// The change at `time` (timeline seconds inside the span), as a multiplier.
+        func gain(at time: Double) -> Double {
+            let fixed = Loudness.linear(gainDB)
+            guard let envelope else { return fixed }
+            return fixed * envelope.gain(at: sourceStart + time - start)
+        }
     }
 
     /// The sound playing now, after the gains.
@@ -81,7 +100,8 @@ nonisolated final class TimelineAudio: @unchecked Sendable {
         guard index < envelope.power.count else { return nil }
         func gain(_ index: Int) -> Double {
             let at = (Double(index) + 0.5) * Envelope.step
-            return spans.first { at >= $0.start && at < $0.end }?.gainDB ?? 0
+            guard let span = spans.first(where: { at >= $0.start && at < $0.end }) else { return 0 }
+            return max(-120, Loudness.decibels(span.gain(at: at)))
         }
         // Momentary loudness covers the last 400 ms, as while playing.
         let window = max(0, index - 3)...index
@@ -157,6 +177,19 @@ nonisolated final class TimelineAudio: @unchecked Sendable {
 
     /// An audio mix that applies the gains to `track` (the timeline's sound track).
     func audioMix(for track: AVAssetTrack) -> AVAudioMix? {
+        audioMix(for: [track])
+    }
+
+    /// An audio mix that applies the gains to each of `tracks`.
+    func audioMix(for tracks: [AVAssetTrack]) -> AVAudioMix? {
+        let parameters = tracks.compactMap(inputParameters(for:))
+        guard !parameters.isEmpty else { return nil }
+        let mix = AVMutableAudioMix()
+        mix.inputParameters = parameters
+        return mix
+    }
+
+    private func inputParameters(for track: AVAssetTrack) -> AVAudioMixInputParameters? {
         let context = TapContext(owner: self)
         var callbacks = MTAudioProcessingTapCallbacks(
             version: kMTAudioProcessingTapCallbacksVersion_0,
@@ -185,15 +218,14 @@ nonisolated final class TimelineAudio: @unchecked Sendable {
         }
         let parameters = AVMutableAudioMixInputParameters(track: track)
         parameters.audioTapProcessor = tap
-        let mix = AVMutableAudioMix()
-        mix.inputParameters = [parameters]
-        return mix
+        return parameters
     }
 }
 
 /// One tap's state. Only the audio thread touches it, apart from `prepare`.
 private nonisolated final class TapContext {
-    private weak var owner: TimelineAudio?
+    /// Held strongly: an export's audio mix may be all that's left holding the gains.
+    private let owner: TimelineAudio
     private var sampleRate = 48_000.0
     private var isFloat = false
     private var filters: [KWeighting] = []
@@ -225,7 +257,7 @@ private nonisolated final class TapContext {
     }
 
     func process(_ buffers: UnsafeMutableAudioBufferListPointer, frames: Int, start: CMTime) {
-        guard isFloat, frames > 0, let owner else { return }
+        guard isFloat, frames > 0 else { return }
         let startSeconds = start.isNumeric ? start.seconds : max(0, expected)
         let spans = owner.spans
         let jumped = abs(startSeconds - expected) > 0.05
@@ -249,8 +281,11 @@ private nonisolated final class TapContext {
             let time = startSeconds + Double(frame) / sampleRate
             if spanIndex < 0 || time < spans[spanIndex].start || time >= spans[spanIndex].end {
                 spanIndex = spans.firstIndex { time >= $0.start && time < $0.end } ?? -1
-                target = spanIndex >= 0 ? Loudness.linear(spans[spanIndex].gainDB) : 1
+                target = spanIndex >= 0 ? spans[spanIndex].gain(at: time) : 1
                 if jumped, frame == 0 { gain = target }
+            } else if frame % 32 == 0, spans[spanIndex].envelope != nil {
+                // Keyframed volume: follow the line (the smoothing fills in between).
+                target = spans[spanIndex].gain(at: time)
             }
             gain += (target - gain) * smoothing
             let applied = Float(gain)

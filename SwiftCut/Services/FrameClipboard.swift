@@ -8,12 +8,17 @@ enum FrameClipboard {
     /// The player item's frame at its current time, at full size, as the viewer shows it
     /// (through its video composition: effects, color, timeline layout).
     static func currentFrame(of item: AVPlayerItem) async throws -> CGImage {
-        nonisolated(unsafe) let generator = AVAssetImageGenerator(asset: item.asset)
-        generator.videoComposition = item.videoComposition
+        try await frame(of: item.asset, videoComposition: item.videoComposition, at: item.currentTime())
+    }
+
+    /// The frame of `asset` at `time`, through `videoComposition` when there is one.
+    static func frame(of asset: AVAsset, videoComposition: AVVideoComposition?, at time: CMTime) async throws -> CGImage {
+        nonisolated(unsafe) let generator = AVAssetImageGenerator(asset: asset)
+        generator.videoComposition = videoComposition
         generator.appliesPreferredTrackTransform = true
         generator.requestedTimeToleranceBefore = .zero
         generator.requestedTimeToleranceAfter = .zero
-        return try await generator.image(at: item.currentTime()).image
+        return try await generator.image(at: time).image
     }
 
     /// Copies `image` as PNG (full quality, keeps its color space), plus TIFF for apps that only

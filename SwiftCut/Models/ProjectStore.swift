@@ -248,8 +248,11 @@ final class ProjectStore {
         return subclip
     }
 
+    /// A new subclip starts with a copy of the volume keyframes it played with (the source's, or
+    /// the subclip it copies); after that its keyframes are its own.
     private func makeSubclip(of clip: Clip, start: Double, end: Double?, after: Subclip? = nil) -> Subclip {
         let subclip = Subclip(sourceID: clip.id, name: nextSubclipName(for: clip), start: start, end: end)
+        subclip.volume = after?.volume ?? clip.volume
         if let after, let index = subclips.firstIndex(where: { $0.id == after.id }) {
             subclips.insert(subclip, at: index + 1)
         } else {
@@ -535,8 +538,15 @@ final class ProjectStore {
             let duration = self.duration(of: item)
             guard duration > 0 else { return nil }
             defer { start += duration }
-            return TimelineAudio.Span(start: start, end: start + duration, gainDB: audioPlan(for: item).gainDB)
+            return TimelineAudio.Span(start: start, end: start + duration, gainDB: audioPlan(for: item).gainDB,
+                                      envelope: volume(of: item), sourceStart: trimRange(of: item).lowerBound)
         }
+    }
+
+    /// The volume keyframes a timeline item plays with: its subclip's own, or the source video's.
+    func volume(of item: TimelineItem) -> VolumeEnvelope {
+        if let id = item.subclipID { return subclip(for: id)?.volume ?? VolumeEnvelope() }
+        return clip(for: item.clipID)?.volume ?? VolumeEnvelope()
     }
 
     /// Seconds into the timeline where an item starts, as `timelineAudioSpans` counts.
@@ -611,7 +621,8 @@ final class ProjectStore {
                     if let clip = clip(for: id) { await exportClip(clip, as: preset, to: folder) }
                 case .subclip(let id):
                     if let subclip = subclip(for: id), let clip = clip(for: subclip.sourceID) {
-                        await exportClip(clip, range: range(of: subclip), name: subclip.name, as: preset, to: folder)
+                        await exportClip(clip, range: range(of: subclip), name: subclip.name, volume: subclip.volume,
+                                         as: preset, to: folder)
                     }
                 case .timeline:
                     break
@@ -625,8 +636,10 @@ final class ProjectStore {
     }
 
     /// Exports part of a source video (`range`), or all of it when `range` is `nil`.
-    func exportClip(_ clip: Clip, range: ClosedRange<Double>?, name baseName: String,
+    /// `volume` is the keyframes to play with: the source video's when `nil`.
+    func exportClip(_ clip: Clip, range: ClosedRange<Double>?, name baseName: String, volume: VolumeEnvelope? = nil,
                     as preset: ExportPreset, to folder: URL) async {
+        let volume = volume ?? clip.volume
         let settings = clip.enhanceSettings
         let enhanced = settings.isActive && !preset.isAudioOnly
         let name = enhanced ? "\(baseName) \(clip.exportNameSuffix)" : baseName
@@ -643,17 +656,30 @@ final class ProjectStore {
                     ? CMTimeRange(start: CMTime(seconds: range.lowerBound, preferredTimescale: 90_000),
                                   end: CMTime(seconds: range.upperBound, preferredTimescale: 90_000))
                     : nil
+                // Times in this asset are the source video's.
+                let mix = await Self.volumeMix(volume, asset: playable.asset, sourceStart: 0)
                 exporter.export(asset: playable.asset, videoComposition: playable.videoComposition,
-                                timeRange: timeRange, name: name, preset: preset, folder: folder)
+                                audioMix: mix, timeRange: timeRange, name: name, preset: preset, folder: folder)
             } else {
                 // Goes through a composition so the picture shape is corrected the same way as in the preview.
                 let built = try await CompositionBuilder.build([.init(url: clip.url, start: range.lowerBound, end: range.upperBound)])
+                let mix = await Self.volumeMix(volume, asset: built.composition, sourceStart: range.lowerBound)
                 exporter.export(asset: built.composition, videoComposition: built.videoComposition,
-                                name: name, preset: preset, folder: folder)
+                                audioMix: mix, name: name, preset: preset, folder: folder)
             }
         } catch {
             exporter.reportFailure(error.localizedDescription, name: name, preset: preset)
         }
+    }
+
+    /// Applies volume keyframes to an export, where the export's time 0 is `sourceStart` in the
+    /// source video. `nil` when there are none.
+    private static func volumeMix(_ volume: VolumeEnvelope, asset: AVAsset, sourceStart: Double) async -> AVAudioMix? {
+        guard !volume.isEmpty,
+              let tracks = try? await asset.loadTracks(withMediaType: .audio), !tracks.isEmpty else { return nil }
+        let audio = TimelineAudio(spans: [.init(start: 0, end: .greatestFiniteMagnitude, gainDB: 0,
+                                                envelope: volume, sourceStart: sourceStart)])
+        return audio.audioMix(for: tracks)
     }
 
     /// This project's timeline exports, for the inspector's Cancel button.

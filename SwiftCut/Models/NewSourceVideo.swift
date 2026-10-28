@@ -36,6 +36,8 @@ struct NewSourceOptions: Equatable {
             baked.look = nil
         }
         if !bakeGrade { baked.grade = nil }
+        // Scale and position aren't drawn in; they carry over as a setting (see `passSettings`).
+        baked.layout = nil
         return baked
     }
 }
@@ -76,6 +78,7 @@ extension Clip {
             new.grade = grade
         }
         if options.inherit {
+            new.layout = layout
             new.showCaptions = showCaptions
             // A whole-file copy keeps the marks.
             if !options.trimToMarks {

@@ -14,6 +14,8 @@ struct ClipDetailView: View {
     /// The viewer's zoom stays the same from clip to clip; the picture goes back to centered.
     @State private var zoom = ViewerZoom.fit
     @State private var pan = CGSize.zero
+    /// The video toolbar's Quality menu, kept from clip to clip and between launches.
+    @AppStorage("clipPreviewQuality") private var quality = PreviewQuality.full
     @State private var toast: Toast?
     /// The part of the picture on screen, and its size there in pixels, for Export Images.
     @State private var visibleView = (fraction: CGRect(x: 0, y: 0, width: 1, height: 1), pixels: CGSize.zero)
@@ -34,7 +36,9 @@ struct ClipDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VideoToolbar(pictureSize: clip.outputSize, zoom: $zoom, canCopy: clip.hasVideo,
+            VideoToolbar(pictureSize: clip.outputSize, zoom: $zoom, quality: $quality,
+                         qualityHelp: "Preview quality. Lower settings run the clip's effects, color, and framing on a smaller picture, so they play smoothly. Clips without any play as is. Exports and copied frames are always full quality.",
+                         canCopy: clip.hasVideo,
                          isExporting: isExportingImages, copyFrame: copyFrame, exportImages: exportImages)
 
             Divider()
@@ -73,6 +77,8 @@ struct ClipDetailView: View {
                 }
             })
         }
+        .onChange(of: subclip?.volume ?? clip.volume) { controller.updateVolume() }
+        .onChange(of: clip.enhanceSettings.layout) { controller.updateLayout() }
         .onChange(of: clip.showCaptions) {
             Task { await controller.updateCaptions() }
         }
@@ -80,7 +86,8 @@ struct ClipDetailView: View {
             controller.updateColor()
         }
         // The LUT and grade aren't part of the key: the preview follows them live.
-        .task(id: EffectsKey(id: clip.id, settings: clip.enhanceSettings.structure)) {
+        .onChange(of: quality, initial: true) { controller.previewQuality = quality }
+        .task(id: EffectsKey(id: clip.id, settings: clip.enhanceSettings.structure, quality: quality)) {
             // Wait a moment so dragging a slider doesn't rebuild the preview on every tick.
             try? await Task.sleep(for: .milliseconds(200))
             guard !Task.isCancelled else { return }
@@ -139,6 +146,7 @@ extension ClipDetailView {
 private struct EffectsKey: Hashable {
     let id: UUID
     let settings: EnhanceSettings
+    let quality: PreviewQuality
 }
 
 /// Always-visible controls under the clip: scrubber, timecode, frame counter, and in/out.
@@ -256,10 +264,6 @@ private struct TransportBar: View {
             Button("Zoom In", systemImage: "plus.magnifyingglass") { zoom = min(maxZoom, zoom * zoomStep) }
                 .help("Zoom in")
                 .disabled(zoom >= maxZoom)
-            Button("Zoom to Fit", systemImage: "arrow.right.and.line.vertical.and.arrow.left") { zoom = 1 }
-                .help("Zoom out to show the whole clip")
-                .disabled(zoom <= 1)
-                .padding(.leading, 4)
         }
         .labelStyle(.iconOnly)
         .buttonStyle(.borderless)
@@ -483,17 +487,19 @@ private struct Scrubber: View {
     @State private var hoverX: CGFloat?
 
     private let filmHeight: CGFloat = 40
-    /// The waveform under the filmstrip (none when the clip has no sound).
-    private let waveformHeight: CGFloat = 34
+    /// The waveform under the filmstrip (none when the clip has no sound): five times as tall
+    /// while editing the volume.
+    private var waveformHeight: CGFloat { controller.isEditingVolume ? 170 : 34 }
     private let waveformGap: CGFloat = 3
     private var showsWaveform: Bool { clip.hasAudio }
     /// The whole scrubber: filmstrip, then the waveform.
     private var height: CGFloat { showsWaveform ? filmHeight + waveformGap + waveformHeight : filmHeight }
     /// How wide the grab area over the in and out edges is.
     private let edgeGrabWidth: CGFloat = 12
-    /// The yellow border's thickness, and an edge's while it's pointed at or dragged.
+    /// The yellow border's thickness.
     private let borderWidth: CGFloat = 3
-    private let activeEdgeWidth: CGFloat = 6
+    /// The white handle shown over an edge while it's pointed at or dragged.
+    private let edgeHandleWidth: CGFloat = 8
     /// The in or out edge under the pointer, if any.
     @State private var hoveredEdge: Target?
     /// How close to the playhead line counts as pointing at it.
@@ -611,7 +617,7 @@ private struct Scrubber: View {
             if zoom > maxZoom { zoom = maxZoom }
         }
         .onChange(of: wantedFrames, initial: true) { _, wanted in frames.want(wanted) }
-        .task(id: "\(clip.id) \(clip.isLoaded)") { await readWaveform() }
+        .task(id: "\(clip.id) \(clip.isLoaded)") { await clip.readWaveform() }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Playhead")
         .accessibilityValue(controller.clock.timecode(seconds: controller.currentTime))
@@ -680,7 +686,7 @@ private struct Scrubber: View {
                 filmstrip
                 if showsWaveform {
                     WaveformView(waveform: clip.waveform, isReading: !clip.isWaveformRead,
-                                 contentWidth: width, drawn: drawn)
+                                 contentWidth: width, drawn: drawn, volume: controller.volumeEnvelope, duration: duration)
                         .frame(width: drawn.upperBound - drawn.lowerBound, height: waveformHeight)
                         .offset(x: drawn.lowerBound)
                 }
@@ -708,11 +714,11 @@ private struct Scrubber: View {
                         .offset(x: borderStart)
                         .allowsHitTesting(false)
                 }
-                // The edge being pointed at or dragged thickens.
-                edgeBar(.inPoint)
-                    .offset(x: min(inX, width - activeEdgeWidth))
-                edgeBar(.outPoint)
-                    .offset(x: max(0, outX - activeEdgeWidth))
+                // A white handle fades in over the edge being pointed at or dragged.
+                edgeHandle(.inPoint)
+                    .offset(x: handleX(centeredOn: inX + borderWidth / 2, width: width), y: -2)
+                edgeHandle(.outPoint)
+                    .offset(x: handleX(centeredOn: outX - borderWidth / 2, width: width), y: -2)
             }
 
             // Playhead: thickens while pointed at or dragged.
@@ -728,6 +734,13 @@ private struct Scrubber: View {
                 .animation(.easeOut(duration: 0.12), value: lineWidth)
                 .allowsHitTesting(false)
 
+            if showsWaveform, controller.isEditingVolume || !controller.volumeEnvelope.isEmpty {
+                VolumeLine(controller: controller, isEditing: controller.isEditingVolume, clock: controller.clock,
+                           duration: duration, contentWidth: width, drawn: drawn, height: waveformHeight)
+                    .frame(width: drawn.upperBound - drawn.lowerBound, height: waveformHeight)
+                    .offset(x: drawn.lowerBound, y: filmHeight + waveformGap)
+            }
+
             if controller.hasMarks {
                 edgeGrabArea(.inPoint)
                     .offset(x: min(max(0, inX - edgeGrabWidth / 2), width - edgeGrabWidth))
@@ -740,6 +753,17 @@ private struct Scrubber: View {
         .frame(width: width, height: height, alignment: .topLeading)
         .contentShape(Rectangle())
         .gesture(drag(.playhead, width: width, duration: duration))
+        // Double-clicking the waveform while editing the volume adds a keyframe there.
+        .simultaneousGesture(
+            SpatialTapGesture(count: 2, coordinateSpace: .named("scrubber")).onEnded { value in
+                guard controller.isEditingVolume, showsWaveform, value.location.y > filmHeight else { return }
+                let time = min(max(0, Double(value.location.x / width) * duration), duration)
+                let clock = controller.clock
+                let snapped = clock.fps > 0 ? clock.seconds(ofFrame: Int((time * clock.fps).rounded())) : time
+                controller.selectedKeyframe = controller.volumeEnvelope.addKeyframe(
+                    at: min(snapped, duration), minimumGap: clock.fps > 0 ? clock.seconds(ofFrame: 1) / 2 : 0.01)
+            }
+        )
         .onContinuousHover(coordinateSpace: .named("scrubber")) { phase in
             if case .active(let point) = phase { hoverX = point.x } else { hoverX = nil }
         }
@@ -761,23 +785,27 @@ private struct Scrubber: View {
         anchor.map { $0.target == edge } ?? (hoveredEdge == edge)
     }
 
-    /// A thicker yellow bar over the in or out edge, shown while it's pointed at or dragged.
-    private func edgeBar(_ edge: Target) -> some View {
-        UnevenRoundedRectangle(
-            topLeadingRadius: edge == .inPoint ? 4 : 0, bottomLeadingRadius: edge == .inPoint ? 4 : 0,
-            bottomTrailingRadius: edge == .outPoint ? 4 : 0, topTrailingRadius: edge == .outPoint ? 4 : 0
-        )
-        .fill(Color.yellow)
-        .frame(width: activeEdgeWidth, height: height)
-        .opacity(isEdgeActive(edge) ? 1 : 0)
-        .animation(.easeOut(duration: 0.12), value: isEdgeActive(edge))
-        .allowsHitTesting(false)
+    /// Where a handle centered on `center` starts, kept inside the strip.
+    private func handleX(centeredOn center: CGFloat, width: CGFloat) -> CGFloat {
+        min(max(0, center - edgeHandleWidth / 2), max(0, width - edgeHandleWidth))
     }
 
-    /// An invisible strip over the in or out edge that can be dragged.
+    /// A white rounded grab handle over the in or out edge, shown while it's pointed at or dragged.
+    private func edgeHandle(_ edge: Target) -> some View {
+        RoundedRectangle(cornerRadius: edgeHandleWidth / 2)
+            .fill(.white)
+            .shadow(color: .black.opacity(0.35), radius: 2)
+            .frame(width: edgeHandleWidth, height: height + 4)
+            .opacity(isEdgeActive(edge) ? 1 : 0)
+            .animation(.easeOut(duration: 0.15), value: isEdgeActive(edge))
+            .allowsHitTesting(false)
+    }
+
+    /// An invisible strip over the in or out edge that can be dragged. Only over the filmstrip
+    /// while editing the volume, so it doesn't cover keyframes.
     private func edgeGrabArea(_ edge: Target) -> some View {
         Color.clear
-            .frame(width: edgeGrabWidth, height: height)
+            .frame(width: edgeGrabWidth, height: controller.isEditingVolume ? filmHeight : height)
             .contentShape(Rectangle())
             .onHover { inside in
                 if inside { hoveredEdge = edge } else if hoveredEdge == edge { hoveredEdge = nil }
@@ -815,6 +843,10 @@ private struct Scrubber: View {
 
                 switch target {
                 case .playhead:
+                    // Clicking the waveform away from the keyframes deselects them.
+                    if controller.isEditingVolume, value.startLocation.y > filmHeight {
+                        controller.selectedKeyframe = nil
+                    }
                     controller.pause()
                     controller.seek(to: seconds)
                 case .inPoint:
@@ -824,18 +856,6 @@ private struct Scrubber: View {
                 }
             }
             .onEnded { _ in anchor = nil }
-    }
-
-    /// Reads the clip's waveform the first time it's shown (it's kept on the clip after that).
-    private func readWaveform() async {
-        guard clip.hasAudio, !clip.isWaveformRead, clip.isLoaded else { return }
-        let url = clip.url, duration = clip.duration
-        let waveform = try? await Task.detached(priority: .utility) {
-            try await Waveform.read(url: url, duration: duration)
-        }.value
-        guard !Task.isCancelled else { return }
-        clip.waveform = waveform
-        clip.isWaveformRead = true
     }
 
     /// Pictures along the strip: one block per frame when frames are wide enough, otherwise
@@ -915,40 +935,180 @@ private struct FrameBlock: View {
     }
 }
 
-/// The clip's sound under the filmstrip: each column's loudest moment, mirrored around the middle.
-/// Only the drawn part of the strip (`drawn`, out of `contentWidth`) is drawn.
-private struct WaveformView: View {
-    let waveform: Waveform?
-    let isReading: Bool
+/// The clip's volume as a line over the waveform. While editing, its keyframes can be dragged
+/// (up and down for the level, sideways to move them; Shift for fine control) and right-clicked
+/// to switch between linear and spline or delete them. Clicking one selects it. Only the drawn part of the strip is drawn.
+private struct VolumeLine: View {
+    let controller: ClipPlayerController
+    let isEditing: Bool
+    let clock: FrameClock
+    let duration: Double
     let contentWidth: CGFloat
     let drawn: ClosedRange<CGFloat>
+    let height: CGFloat
+
+    private struct DragStart {
+        var id: UUID
+        var time: Double
+        var position: Double
+        var translation: CGSize
+        var speed: Double
+    }
+
+    @State private var dragStart: DragStart?
+    @State private var hovered: UUID?
+
+    /// Keyframes stay this far from the top and bottom, so they can be grabbed at the extremes.
+    private let inset: CGFloat = 6
+    private let keySize: CGFloat = 11
+
+    private var usableHeight: CGFloat { max(1, height - inset * 2) }
+    private func x(_ time: Double) -> CGFloat { CGFloat(time / duration) * contentWidth - drawn.lowerBound }
+    private func y(_ position: Double) -> CGFloat { inset + (1 - CGFloat(position)) * usableHeight }
 
     var body: some View {
-        Canvas { context, size in
-            guard let waveform, !waveform.peaks.isEmpty, size.width > 0, contentWidth > 0 else { return }
-            let columns = Int(size.width.rounded(.up))
-            let count = waveform.peaks.count
-            let perPoint = Double(count) / Double(contentWidth)
-            let middle = size.height / 2
-            var path = Path()
-            for column in 0..<columns {
-                let x = Double(drawn.lowerBound) + Double(column)
-                let first = min(count - 1, Int(x * perPoint))
-                let last = max(first + 1, min(count, Int((x + 1) * perPoint)))
-                var level: Float = 0
-                for index in first..<last { level = max(level, waveform.height(at: index)) }
-                let half = max(0.5, CGFloat(level) * (middle - 1))
-                path.addRect(CGRect(x: CGFloat(column), y: middle - half, width: 1, height: half * 2))
+        let envelope = controller.volumeEnvelope
+        let width = drawn.upperBound - drawn.lowerBound
+
+        ZStack(alignment: .topLeading) {
+            if isEditing {
+                // 0 dB: the sound as recorded.
+                Path { path in
+                    let zero = y(VolumeEnvelope.position(forDB: 0))
+                    path.move(to: CGPoint(x: 0, y: zero))
+                    path.addLine(to: CGPoint(x: width, y: zero))
+                }
+                .stroke(.white.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
             }
-            context.fill(path, with: .color(.accentColor.opacity(0.85)))
+
+            line(envelope, width: width)
+                .stroke(.white.opacity(isEditing ? 0.95 : 0.6), style: StrokeStyle(lineWidth: isEditing ? 1.5 : 1, lineJoin: .round))
+                .shadow(color: .black.opacity(0.5), radius: 1)
+
+            if isEditing {
+                ForEach(visibleKeys(envelope, width: width)) { key in
+                    handle(key)
+                }
+            }
         }
-        .background(.black.opacity(0.25), in: RoundedRectangle(cornerRadius: 6))
-        .overlay {
-            RoundedRectangle(cornerRadius: 6).strokeBorder(.primary.opacity(0.15))
-            if isReading { ProgressView().controlSize(.mini) }
+        .frame(width: width, height: height, alignment: .topLeading)
+        .allowsHitTesting(isEditing)
+        .accessibilityHidden(!isEditing)
+    }
+
+    /// The line across the drawn part, a point every two points along.
+    private func line(_ envelope: VolumeEnvelope, width: CGFloat) -> Path {
+        Path { path in
+            var started = false
+            var column: CGFloat = 0
+            while column <= width + 2 {
+                let time = Double((drawn.lowerBound + column) / contentWidth) * duration
+                let point = CGPoint(x: column, y: y(envelope.position(at: time)))
+                if started { path.addLine(to: point) } else { path.move(to: point); started = true }
+                column += 2
+            }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .accessibilityHidden(true)
+    }
+
+    private func visibleKeys(_ envelope: VolumeEnvelope, width: CGFloat) -> [VolumeEnvelope.Keyframe] {
+        envelope.keyframes.filter { (-keySize...(width + keySize)).contains(x($0.time)) }
+    }
+
+    private func handle(_ key: VolumeEnvelope.Keyframe) -> some View {
+        let position = VolumeEnvelope.position(forDB: key.gainDB)
+        let isActive = dragStart?.id == key.id || (dragStart == nil && hovered == key.id)
+        let isSelected = controller.selectedKeyframe == key.id
+        return ZStack {
+            // Diamonds meet the line at a corner; circles ease through it.
+            Group {
+                // Selected: filled with the accent color and ringed in white.
+                if key.isSmooth {
+                    Circle().fill(isSelected ? Color.accentColor : .white)
+                        .overlay(Circle().strokeBorder(isSelected ? .white : .black.opacity(0.5), lineWidth: isSelected ? 2 : 1))
+                } else {
+                    Rectangle().fill(isSelected ? Color.accentColor : .white)
+                        .overlay(Rectangle().strokeBorder(isSelected ? .white : .black.opacity(0.5), lineWidth: isSelected ? 2 : 1))
+                        .rotationEffect(.degrees(45))
+                        .scaleEffect(0.78)
+                }
+            }
+            .frame(width: keySize, height: keySize)
+            .scaleEffect(isActive ? 1.25 : 1)
+            .shadow(color: .black.opacity(0.4), radius: 1.5)
+        }
+        .frame(width: keySize + 8, height: keySize + 8)
+        .contentShape(Rectangle())
+        .overlay(alignment: .bottom) {
+            if isActive {
+                Text(VolumeEnvelope.label(forDB: key.gainDB))
+                    .font(.caption2.monospacedDigit().weight(.medium))
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(.black.opacity(0.75), in: Capsule())
+                    .foregroundStyle(.white)
+                    .fixedSize()
+                    .offset(y: position > 0.8 ? keySize + 18 : -(keySize + 6))
+                    .allowsHitTesting(false)
+            }
+        }
+        .animation(.easeOut(duration: 0.1), value: isActive)
+        .onHover { inside in
+            if inside { hovered = key.id } else if hovered == key.id { hovered = nil }
+        }
+        .gesture(drag(key))
+        .contextMenu {
+            Picker("Curve", selection: Binding(
+                get: { controller.volumeEnvelope.keyframe(key.id)?.isSmooth ?? false },
+                set: { controller.volumeEnvelope.setSmooth(key.id, $0) }
+            )) {
+                Text("Linear").tag(false)
+                Text("Spline").tag(true)
+            }
+            .pickerStyle(.inline)
+            Divider()
+            Button("Delete Keyframe", role: .destructive) {
+                controller.volumeEnvelope.remove(key.id)
+                if hovered == key.id { hovered = nil }
+                if controller.selectedKeyframe == key.id { controller.selectedKeyframe = nil }
+            }
+        }
+        .help("\(VolumeEnvelope.label(forDB: key.gainDB)). Drag to change the volume or move the keyframe; hold Shift for fine control. Right-click to switch between linear and spline, or to delete it.")
+        .accessibilityElement()
+        .accessibilityLabel("Volume keyframe at \(clock.timecode(seconds: key.time))")
+        .accessibilityValue(VolumeEnvelope.label(forDB: key.gainDB))
+        .position(x: x(key.time), y: y(position))
+    }
+
+    private func drag(_ key: VolumeEnvelope.Keyframe) -> some Gesture {
+        // In the strip's space, which doesn't move with the keyframe.
+        DragGesture(minimumDistance: 0, coordinateSpace: .named("scrubber"))
+            .onChanged { value in
+                let speed = NSEvent.modifierFlags.contains(.shift) ? 0.1 : 1
+                guard let current = controller.volumeEnvelope.keyframe(key.id) else { return }
+                if dragStart?.id != key.id {
+                    controller.selectedKeyframe = key.id
+                    dragStart = DragStart(id: key.id, time: current.time, position: VolumeEnvelope.position(forDB: current.gainDB),
+                                          translation: value.translation, speed: speed)
+                } else if let start = dragStart, start.speed != speed {
+                    // Shift pressed or let go mid-drag: carry on from here at the new speed.
+                    dragStart = DragStart(id: key.id, time: current.time, position: VolumeEnvelope.position(forDB: current.gainDB),
+                                          translation: value.translation, speed: speed)
+                }
+                guard let start = dragStart else { return }
+                let dx = value.translation.width - start.translation.width
+                let dy = value.translation.height - start.translation.height
+
+                let frame = clock.fps > 0 ? clock.seconds(ofFrame: 1) : 0.01
+                let range = controller.volumeEnvelope.movableRange(of: key.id, duration: duration, gap: frame)
+                var time = start.time + Double(dx / contentWidth) * duration * start.speed
+                if clock.fps > 0 { time = clock.seconds(ofFrame: Int((time * clock.fps).rounded())) }
+                time = min(max(range.lowerBound, time), range.upperBound)
+
+                let position = min(1, max(0, start.position - Double(dy / usableHeight) * start.speed))
+                let db = VolumeEnvelope.db(forPosition: position)
+                controller.volumeEnvelope.move(key.id, to: time, gainDB: db.isFinite ? db : VolumeEnvelope.minDB)
+            }
+            .onEnded { _ in dragStart = nil }
     }
 }
 

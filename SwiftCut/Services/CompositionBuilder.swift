@@ -40,8 +40,10 @@ enum CompositionBuilder {
     }
 
     /// `audio` sets each stretch's volume; without it the sound plays as recorded.
+    /// `previewDivisor` above 1 draws a frame that many times smaller, for a lighter preview
+    /// (`PreviewQuality`); exports leave it at 1.
     static func build(_ segments: [Segment], settings: TimelineSettings = TimelineSettings(),
-                      audio: TimelineAudio? = nil) async throws -> Result {
+                      audio: TimelineAudio? = nil, previewDivisor: Int = 1) async throws -> Result {
         let composition = AVMutableComposition()
         guard
             let videoTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid),
@@ -86,12 +88,18 @@ enum CompositionBuilder {
                 var enhance: EnhanceInstruction?
                 var usedNeighbors: [CMPersistentTrackID] = []
                 var pictureSize = geometry.encodedSize
+                var fullPictureSize = pictureSize
                 var transform = geometry.transform
                 var outputStep = step
 
                 if effects.isActive {
                     try await Enhancer.checkModel(for: asset, settings: effects)
-                    let display = Enhancer.evenSize(geometry.displaySize)
+                    let full = Enhancer.evenSize(geometry.displaySize)
+                    let display = previewDivisor > 1
+                        ? Enhancer.previewSize(displaySize: geometry.displaySize, settings: effects, divisor: previewDivisor)
+                        : full
+                    // The frame size follows the full-quality picture.
+                    fullPictureSize = Enhancer.outputSize(displaySize: full, upscale: effects.upscale)
                     outputStep = effects.fieldOrder != nil ? CMTimeMultiplyByRatio(step, multiplier: 1, divisor: 2) : step
                     anyDeinterlaced = anyDeinterlaced || effects.fieldOrder != nil
 
@@ -119,7 +127,9 @@ enum CompositionBuilder {
                     enhance = EnhanceInstruction(
                         timeRange: timelineRange, settings: effects, mainTrack: videoTrack.trackID,
                         neighborTracks: neighbors, sourceFrameDuration: step, outputFrameDuration: outputStep,
-                        displaySize: display, color: effects.colorLook.map { LiveColor($0) }
+                        displaySize: display, previewScale: display.height / full.height,
+                        color: effects.colorLook.map { LiveColor($0) },
+                        layout: effects.layout.map { LiveLayout($0) }
                     )
                     // The effects output the corrected picture (shape fixed, maybe upscaled), upright.
                     pictureSize = Enhancer.outputSize(displaySize: display, upscale: effects.upscale)
@@ -127,7 +137,7 @@ enum CompositionBuilder {
                 }
 
                 if firstPictureSize == nil {
-                    let shown = CGRect(origin: .zero, size: pictureSize).applying(transform)
+                    let shown = CGRect(origin: .zero, size: fullPictureSize).applying(transform)
                     firstPictureSize = CGSize(width: abs(shown.width).rounded(), height: abs(shown.height).rounded())
                 }
                 // Use the fastest clip's exact timing (29.97 stays 29.97; deinterlaced clips count double).
@@ -156,7 +166,11 @@ enum CompositionBuilder {
 
         var videoComposition: AVVideoComposition?
         if let firstPictureSize {
-            let renderSize = settings.renderSize(firstClip: firstPictureSize)
+            let fullSize = settings.renderSize(firstClip: firstPictureSize)
+            let renderSize = previewDivisor > 1
+                ? Enhancer.evenSize(CGSize(width: fullSize.width / CGFloat(previewDivisor),
+                                           height: fullSize.height / CGFloat(previewDivisor)))
+                : fullSize
             let instructions = placements.map { placement in
                 TimelineInstruction(
                     timeRange: placement.range, mainTrack: videoTrack.trackID, hasVideo: placement.hasVideo,

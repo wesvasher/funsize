@@ -14,7 +14,7 @@ struct StripNavigator<Overview: View>: View {
     var marked: ClosedRange<CGFloat>?
     /// Scrolls the strip so its left edge is at this place.
     let scroll: (CGFloat) -> Void
-    /// Zooms back out to fit.
+    /// Zooms back out to fit (which also hides the navigator).
     let close: () -> Void
     /// The whole strip in miniature, drawn at the width it's given.
     @ViewBuilder let overview: (_ width: CGFloat) -> Overview
@@ -32,17 +32,11 @@ struct StripNavigator<Overview: View>: View {
             }
             .frame(height: Self.height)
 
-            Button(action: close) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 7, weight: .bold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 15, height: 15)
-                    .background(.quaternary, in: Circle())
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Zoom to Fit")
-            .help("Zoom to fit")
+            Button("Zoom to Fit", systemImage: "arrow.right.and.line.vertical.and.arrow.left", action: close)
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .foregroundStyle(.secondary)
+                .help("Zoom out to fit")
         }
     }
 
@@ -63,7 +57,7 @@ struct StripNavigator<Overview: View>: View {
                     .frame(width: max(0, width - outX), height: height)
                     .offset(x: min(outX, width))
                 RoundedRectangle(cornerRadius: 2)
-                    .strokeBorder(Color.yellow, lineWidth: 1.5)
+                    .strokeBorder(Color.yellow.opacity(0.45), lineWidth: 1.5)
                     .frame(width: max(3, outX - inX), height: height)
                     .offset(x: min(inX, width - 3))
             }

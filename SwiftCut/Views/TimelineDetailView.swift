@@ -59,6 +59,10 @@ private struct TimelinePreview: View {
     @State private var sourceID = UUID()
     @State private var zoom = ViewerZoom.fit
     @State private var pan = CGSize.zero
+    /// The video toolbar's Quality menu, kept between launches.
+    @AppStorage("timelinePreviewQuality") private var quality = PreviewQuality.full
+    /// The quality the current preview was built with.
+    @State private var builtQuality = PreviewQuality.full
     @State private var toast: Toast?
     /// The part of the picture on screen, and its size there in pixels, for Export Images.
     @State private var visibleView = (fraction: CGRect(x: 0, y: 0, width: 1, height: 1), pixels: CGSize.zero)
@@ -67,6 +71,8 @@ private struct TimelinePreview: View {
     var body: some View {
         VStack(spacing: 0) {
             VideoToolbar(pictureSize: store.timeline.isEmpty ? nil : store.timelineFrameSize, zoom: $zoom,
+                         quality: $quality,
+                         qualityHelp: "Preview quality. Lower settings draw the timeline, and its clips' effects, on a smaller picture, so it plays smoothly. Exports and copied frames are always full quality.",
                          canCopy: !store.timeline.isEmpty && buildError == nil,
                          isExporting: isExportingImages, copyFrame: copyFrame, exportImages: exportImages) {
                 Button(playback.isPlaying ? "Pause" : "Play", systemImage: playback.isPlaying ? "pause.fill" : "play.fill",
@@ -102,7 +108,7 @@ private struct TimelinePreview: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .toast($toast)
         }
-        .task(id: store.timelineSignature) {
+        .task(id: store.timelineSignature + [quality.rawValue]) {
             await rebuild()
         }
         .onChange(of: store.timeline.isEmpty, initial: true) { _, isEmpty in
@@ -132,10 +138,14 @@ private struct TimelinePreview: View {
 
     // MARK: Copy Frame and Export Images
 
-    /// The frame on screen, through the timeline's layout (size, fit).
+    /// The frame on screen, through the timeline's layout (size, fit). Full quality even when
+    /// the preview is lighter.
     private func grabFrame() async throws -> CGImage {
         guard let item = player.currentItem else { throw EnhanceError.failed("There's no video frame to copy.") }
-        return try await FrameClipboard.currentFrame(of: item)
+        guard builtQuality != .full else { return try await FrameClipboard.currentFrame(of: item) }
+        let time = item.currentTime()
+        let full = try await CompositionBuilder.build(store.timelineSegments, settings: store.timelineSettings)
+        return try await FrameClipboard.frame(of: full.composition, videoComposition: full.videoComposition, at: time)
     }
 
     /// 1-based frame number at the playhead.
@@ -176,9 +186,11 @@ private struct TimelinePreview: View {
         do {
             store.timelineAudio.spans = store.timelineAudioSpans
             store.timelineAudio.envelope = nil
+            let quality = quality
             let result = try await CompositionBuilder.build(segments, settings: store.timelineSettings,
-                                                            audio: store.timelineAudio)
+                                                            audio: store.timelineAudio, previewDivisor: quality.divisor)
             guard !Task.isCancelled else { return }
+            builtQuality = quality
             let resumeAt = player.currentTime()
             let item = AVPlayerItem(asset: result.composition)
             item.videoComposition = result.videoComposition

@@ -84,6 +84,10 @@ nonisolated struct ProjectFile: Codable, Equatable, Sendable {
         var lookIntensity = 1.0
         var lookEnabled = true
         var grade = ColorGrade()
+        /// Volume keyframes; `nil` when there are none.
+        var volume: VolumeEnvelope?
+        /// Scale, position, and background; `nil` when untouched.
+        var layout: FrameLayout?
 
         init(id: UUID = UUID(), url: URL, bookmark: Data?) {
             self.id = id
@@ -120,6 +124,8 @@ nonisolated struct ProjectFile: Codable, Equatable, Sendable {
                 lutIntensity = 1
             }
             grade = try c.decodeIfPresent(ColorGrade.self, forKey: .grade) ?? ColorGrade()
+            volume = try? c.decodeIfPresent(VolumeEnvelope.self, forKey: .volume)
+            layout = try? c.decodeIfPresent(FrameLayout.self, forKey: .layout)
         }
     }
 
@@ -129,6 +135,8 @@ nonisolated struct ProjectFile: Codable, Equatable, Sendable {
         var name: String
         var start: Double
         var end: Double?
+        /// The subclip's own volume keyframes; `nil` when there are none.
+        var volume: VolumeEnvelope? = nil
     }
 
     struct TimelineRecord: Codable, Equatable, Sendable {

@@ -45,12 +45,12 @@ struct ClipInspectorView: View {
                     .frame(maxWidth: .infinity)
             }
             .disabled(clip.isAtDefaults)
-            .help("Put timing, captions, effects, LUT, look, and grade back to how they were when the video was imported")
+            .help("Put timing, captions, effects, LUT, look, grade, and scale and position back to how they were when the video was imported")
         }
         .confirmationDialog("Reset all settings for “\(clip.name)”?", isPresented: $isConfirmingReset) {
             Button("Reset All", role: .destructive) { clip.resetAll() }
         } message: {
-            Text("Timing, captions, effects, LUT, look, and grade go back to how they were when the video was imported. Its subclips share these settings, so they change too. In and out marks are kept. You can undo this with Edit › Undo.")
+            Text("Timing, captions, effects, LUT, look, grade, and scale and position go back to how they were when the video was imported. Its subclips share these settings, so they change too. In and out marks are kept. You can undo this with Edit › Undo.")
         }
     }
 
@@ -94,6 +94,9 @@ struct ClipInspectorView: View {
                         }
                         InspectorRow("Color", clip.colorSpace)
                         InspectorRow("Data Rate", clip.videoBitRate.map(bitRate))
+                        if clip.canEnhance {
+                            FrameRows(clip: clip)
+                        }
                     }
                 }
 
@@ -102,6 +105,9 @@ struct ClipInspectorView: View {
                         InspectorRow("Codec", clip.audioCodec)
                         InspectorRow("Sample Rate", clip.audioSampleRate.map { String(format: "%.4g kHz", $0 / 1000) })
                         InspectorRow("Channels", clip.audioChannels.map(channels))
+                        if let controller {
+                            VolumeRows(clip: clip, controller: controller)
+                        }
                     }
                 }
 
@@ -628,6 +634,213 @@ private struct SubclipSection: View {
     private func lastFrame(_ end: Double) -> String {
         if let clock, clock.fps > 0 { return clock.timecode(frames: max(0, clock.frameIndex(at: end) - 1)) }
         return end.preciseTimecode
+    }
+}
+
+/// The Video section's framing: scale and position the picture inside its frame (which keeps its
+/// size), with a background color or transparency around it.
+private struct FrameRows: View {
+    @Bindable var clip: Clip
+
+    var body: some View {
+        GridRow {
+            Divider().gridCellColumns(2)
+        }
+        GridRow {
+            InspectorLabel("Scale")
+            sliderRow(value: $clip.layout.scale, in: FrameLayout.scaleRange, reset: 1,
+                      label: "\(Int((clip.layout.scale * 100).rounded()))%",
+                      help: "Make the picture smaller or larger inside the frame. The frame keeps its size.")
+        }
+        GridRow {
+            InspectorLabel("Position X")
+            sliderRow(value: $clip.layout.offsetX, in: -1...1, reset: 0,
+                      label: pixels(clip.layout.offsetX * clip.outputSize.width),
+                      help: "Move the picture left or right, in pixels of the frame")
+        }
+        GridRow {
+            InspectorLabel("Position Y")
+            sliderRow(value: $clip.layout.offsetY, in: -1...1, reset: 0,
+                      label: pixels(clip.layout.offsetY * clip.outputSize.height),
+                      help: "Move the picture up or down, in pixels of the frame")
+        }
+        GridRow {
+            InspectorLabel("Background")
+            HStack(spacing: 6) {
+                Picker("Background", selection: $clip.layout.background) {
+                    Text("Color").tag(FrameLayout.Background.color)
+                    Text("Transparent").tag(FrameLayout.Background.transparent)
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .fixedSize()
+                if clip.layout.background == .color {
+                    ColorPicker("Background Color", selection: Binding(
+                        get: { clip.layout.backgroundColor.cgColor },
+                        set: { if let color = RGBAColor($0) { clip.layout.backgroundColor = color } }
+                    ), supportsOpacity: false)
+                    .labelsHidden()
+                }
+            }
+            .help(clip.layout.background == .color
+                  ? "The color around the picture when it doesn't fill the frame"
+                  : "Leave the space around the picture clear. Only Apple ProRes 4444 exports keep transparency; other formats show black. The viewer shows it as a checkerboard.")
+        }
+        if !clip.layout.isIdentity {
+            GridRow {
+                Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
+                Button("Reset Scale and Position", systemImage: "arrow.counterclockwise") {
+                    clip.layout.scale = 1
+                    clip.layout.offsetX = 0
+                    clip.layout.offsetY = 0
+                }
+                .help("Make the picture fill the frame again")
+            }
+        }
+    }
+
+    /// A slider with its value beside it. Double-click the value to reset it.
+    private func sliderRow(value: Binding<Double>, in range: ClosedRange<Double>, reset: Double,
+                           label: String, help: String) -> some View {
+        HStack(spacing: 6) {
+            Slider(value: value, in: range)
+                .help(help)
+            Text(label)
+                .font(.caption.monospacedDigit())
+                .frame(width: 48, alignment: .trailing)
+                .onTapGesture(count: 2) { value.wrappedValue = reset }
+                .help("Double-click to reset")
+        }
+    }
+
+    private func pixels(_ value: Double) -> String {
+        let rounded = Int(value.rounded())
+        return rounded == 0 ? "0 px" : "\(rounded > 0 ? "+" : "−")\(abs(rounded)) px"
+    }
+}
+
+/// The Audio section's volume controls: Edit Volume opens the tall waveform in the clip viewer
+/// with its volume line, and Add Keyframe puts a keyframe on it at the playhead. A clicked
+/// keyframe shows below, to switch between linear and spline and set how much it curves.
+/// For a subclip these are the subclip's own keyframes; the source video's stay as they are.
+private struct VolumeRows: View {
+    @Bindable var clip: Clip
+    @Bindable var controller: ClipPlayerController
+
+    var body: some View {
+        GridRow {
+            InspectorLabel("Volume")
+            Button(controller.isEditingVolume ? "Done" : "Edit Volume",
+                   systemImage: controller.isEditingVolume ? "checkmark" : "slider.vertical.3") {
+                withAnimation(.snappy(duration: 0.25)) { controller.isEditingVolume.toggle() }
+            }
+            .help(controller.isEditingVolume
+                  ? "Close the volume editor"
+                  : "Make the waveform in the viewer taller and show its volume line, to change the volume over time with keyframes")
+        }
+        if controller.isEditingVolume {
+            GridRow {
+                InspectorLabel("Keyframes")
+                HStack(spacing: 6) {
+                    Button("Add Keyframe", systemImage: "plus.diamond", action: addKeyframe)
+                        .help("Add a volume keyframe at the playhead")
+                    Button("Remove All", systemImage: "trash") {
+                        controller.volumeEnvelope.removeAll()
+                        controller.selectedKeyframe = nil
+                    }
+                    .labelStyle(.iconOnly)
+                    .disabled(controller.volumeEnvelope.isEmpty)
+                    .help(controller.subclip == nil
+                          ? "Remove every volume keyframe, so the sound plays as recorded"
+                          : "Remove every volume keyframe from this subclip, so it plays as recorded. The source video's keyframes aren't changed.")
+                }
+            }
+
+            if let id = controller.selectedKeyframe, let key = controller.volumeEnvelope.keyframe(id) {
+                selectedKeyframe(key)
+            } else {
+                GridRow {
+                    Text("Drag a keyframe on the waveform up or down to change the volume, or sideways to move it. Double-click the waveform to add one. Click a keyframe to select it.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .gridCellColumns(2)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func selectedKeyframe(_ key: VolumeEnvelope.Keyframe) -> some View {
+        GridRow {
+            Divider().gridCellColumns(2)
+        }
+        GridRow {
+            Text("Selected Keyframe")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .gridCellColumns(2)
+        }
+        InspectorRow("Time", controller.clock.timecode(seconds: key.time))
+        GridRow {
+            InspectorLabel("Level")
+            HStack(spacing: 6) {
+                Slider(value: Binding(
+                    get: { VolumeEnvelope.position(forDB: key.gainDB) },
+                    set: { position in
+                        let db = VolumeEnvelope.db(forPosition: position)
+                        controller.volumeEnvelope.move(key.id, to: key.time, gainDB: db.isFinite ? db : VolumeEnvelope.minDB)
+                    }
+                ), in: 0...1)
+                .help("The volume at this keyframe")
+                Text(VolumeEnvelope.label(forDB: key.gainDB))
+                    .font(.caption.monospacedDigit())
+                    .frame(width: 58, alignment: .trailing)
+            }
+        }
+        GridRow {
+            InspectorLabel("Type")
+            Picker("Type", selection: Binding(
+                get: { key.isSmooth },
+                set: { controller.volumeEnvelope.setSmooth(key.id, $0) }
+            )) {
+                Text("Linear").tag(false)
+                Text("Spline").tag(true)
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .fixedSize()
+            .help("Linear meets the keyframe at a corner; spline curves through it")
+        }
+        GridRow {
+            InspectorLabel("Curve")
+            HStack(spacing: 6) {
+                Slider(value: Binding(
+                    get: { key.curve },
+                    set: { controller.volumeEnvelope.setCurve(key.id, $0) }
+                ), in: 0...1)
+                .help("How much the spline curves through this keyframe: from nearly straight to fully eased")
+                Text("\(Int((key.curve * 100).rounded()))%")
+                    .font(.caption.monospacedDigit())
+                    .frame(width: 58, alignment: .trailing)
+            }
+            .disabled(!key.isSmooth)
+        }
+        GridRow {
+            Color.clear.gridCellUnsizedAxes([.horizontal, .vertical])
+            Button("Delete Keyframe", systemImage: "trash", role: .destructive) {
+                controller.volumeEnvelope.remove(key.id)
+                controller.selectedKeyframe = nil
+            }
+            .help("Delete this keyframe")
+        }
+    }
+
+    private func addKeyframe() {
+        let clock = controller.clock
+        // On the frame on screen, so it lines up with what you see.
+        let time = clock.fps > 0 ? clock.seconds(ofFrame: clock.frameIndex(at: controller.currentTime)) : controller.currentTime
+        controller.selectedKeyframe = controller.volumeEnvelope.addKeyframe(
+            at: time, minimumGap: clock.fps > 0 ? clock.seconds(ofFrame: 1) / 2 : 0.01)
     }
 }
 
